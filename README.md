@@ -4,6 +4,31 @@ A lightweight Chrome MV3 extension for quickly finding open research, PDF, and d
 
 ## Use
 
+### 개발자 모드로 직접 로드
+
+```powershell
+git clone https://github.com/iseungsang01/tab-extension.git
+```
+
+1. Chrome에서 `chrome://extensions`를 엽니다.
+2. 우측 상단 **개발자 모드**를 켭니다.
+3. **압축해제된 확장 프로그램을 로드합니다**를 클릭합니다.
+4. 클론한 `tab-extension` 폴더를 선택합니다.
+
+### 테스트 실행
+
+```powershell
+node --test test/
+```
+
+또는:
+
+```powershell
+npm test
+```
+
+## Basic use
+
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
 3. Click **Load unpacked**.

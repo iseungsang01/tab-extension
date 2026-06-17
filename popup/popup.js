@@ -4,6 +4,7 @@
   const STORAGE_KEY_SCOPE = 'tabFinder.scope';
   const STORAGE_KEY_NOTES = 'tabFinder.tabNotes.v1';
   const STORAGE_KEY_TITLES = 'tabFinder.tabTitles.v1';
+  const STORAGE_KEY_FAVORITES = 'tabFinder.favorites.v1';
   const DEFAULT_SCOPE = 'current-window';
   const VALID_SCOPES = new Set(['current-window', 'all-windows']);
   const SAVE_DELAY_MS = 350;
@@ -25,6 +26,7 @@
   let tabs = [];
   let notesByTabId = {};
   let titlesByTabId = {};
+  let favoritesByTabId = {};
   let saveTimer = null;
   let scope = DEFAULT_SCOPE;
   let currentWindowId = null;
@@ -54,11 +56,13 @@
     const visibleCount = visibleTabs.length;
     const memoTotal = visibleTabs.filter(tab => (tab.note || '').trim()).length;
     const titleTotal = visibleTabs.filter(tab => (tab.customTitle || '').trim()).length;
+    const autoTitleTotal = visibleTabs.filter(tab => !(tab.customTitle || '').trim() && (tab.autoTitle || '').trim()).length;
+    const favoriteTotal = visibleTabs.filter(tab => tab.favorite).length;
 
     if (resultCount) resultCount.textContent = `${resultLength}건`;
     if (memoCount) memoCount.textContent = String(memoTotal);
     if (titleCount) titleCount.textContent = String(titleTotal);
-    if (headerStats) headerStats.textContent = `탭 ${visibleCount} · 메모 ${memoTotal} · 제목 ${titleTotal}`;
+    if (headerStats) headerStats.textContent = `탭 ${visibleCount} · 즐겨찾기 ${favoriteTotal} · 메모 ${memoTotal} · 수동 ${titleTotal} · 자동 ${autoTitleTotal}`;
     if (scopeLabel) scopeLabel.textContent = `${scopeText()} · ${resultLength}/${visibleCount}`;
   }
 
@@ -90,6 +94,18 @@
     return normalized;
   }
 
+  function normalizeStoredBooleanMap(value) {
+    const normalized = {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return normalized;
+
+    for (const [key, storedValue] of Object.entries(value)) {
+      if (/^\d+$/.test(key) && storedValue === true) {
+        normalized[key] = true;
+      }
+    }
+    return normalized;
+  }
+
   function noteForTab(tabOrId) {
     const key = tabKey(tabOrId);
     return key ? notesByTabId[key] || '' : '';
@@ -100,8 +116,17 @@
     return key ? titlesByTabId[key] || '' : '';
   }
 
+  function favoriteForTab(tabOrId) {
+    const key = tabKey(tabOrId);
+    return key ? favoritesByTabId[key] === true : false;
+  }
+
   function displayTitle(tab) {
-    return tab.customTitle || tab.originalTitle || tab.title || 'Untitled';
+    return tab.customTitle || tab.autoTitle || tab.originalTitle || tab.title || 'Untitled';
+  }
+
+  function fallbackTitle(tab) {
+    return tab?.autoTitle || tab?.originalTitle || tab?.title || 'Untitled';
   }
 
   function originalTitleForKey(key) {
@@ -112,9 +137,11 @@
   function applySavedTabData(tab) {
     const key = tabKey(tab);
     tab.originalTitle = tab.originalTitle || tab.title || 'Untitled';
+    tab.autoTitle = tab.autoTitle || '';
     tab.customTitle = key ? titleForTab(key) : '';
     tab.title = displayTitle(tab);
     tab.note = key ? noteForTab(key) : '';
+    tab.favorite = key ? favoriteForTab(key) : false;
     return tab;
   }
 
@@ -127,6 +154,7 @@
       tab.customTitle = titleForTab(key);
       tab.title = displayTitle(tab);
       tab.note = noteForTab(key);
+      tab.favorite = favoriteForTab(key);
     }
   }
 
@@ -134,12 +162,12 @@
     const key = tabKey(tabOrId);
     if (!key) return;
 
-    const originalTitle = (tabOrId && typeof tabOrId === 'object'
-      ? tabOrId.originalTitle
-      : originalTitleForKey(key)) || '';
+    const baseTitle = (tabOrId && typeof tabOrId === 'object'
+      ? fallbackTitle(tabOrId)
+      : fallbackTitle(tabs.find(candidate => tabKey(candidate) === key)) || originalTitleForKey(key)) || '';
     const text = String(value ?? '').slice(0, TITLE_MAX_LENGTH).trim();
 
-    if (text && text !== originalTitle.trim()) {
+    if (text && text !== baseTitle.trim()) {
       titlesByTabId[key] = text;
     } else {
       delete titlesByTabId[key];
@@ -160,11 +188,24 @@
     updateOpenTabData(key);
   }
 
+  function setInMemoryFavorite(tabOrId, value) {
+    const key = tabKey(tabOrId);
+    if (!key) return;
+
+    if (value === true) {
+      favoritesByTabId[key] = true;
+    } else {
+      delete favoritesByTabId[key];
+    }
+    updateOpenTabData(key);
+  }
+
   async function persistTabData() {
     try {
       await chrome.storage.local.set({
         [STORAGE_KEY_NOTES]: notesByTabId,
         [STORAGE_KEY_TITLES]: titlesByTabId,
+        [STORAGE_KEY_FAVORITES]: favoritesByTabId,
       });
       return true;
     } catch (_) {
@@ -174,12 +215,14 @@
 
   async function loadTabData() {
     try {
-      const data = await chrome.storage.local.get([STORAGE_KEY_NOTES, STORAGE_KEY_TITLES]);
+      const data = await chrome.storage.local.get([STORAGE_KEY_NOTES, STORAGE_KEY_TITLES, STORAGE_KEY_FAVORITES]);
       notesByTabId = normalizeStoredTextMap(data[STORAGE_KEY_NOTES], NOTE_MAX_LENGTH);
       titlesByTabId = normalizeStoredTextMap(data[STORAGE_KEY_TITLES], TITLE_MAX_LENGTH);
+      favoritesByTabId = normalizeStoredBooleanMap(data[STORAGE_KEY_FAVORITES]);
     } catch (_) {
       notesByTabId = {};
       titlesByTabId = {};
+      favoritesByTabId = {};
     }
   }
 
@@ -197,6 +240,13 @@
     for (const key of Object.keys(titlesByTabId)) {
       if (!openKeys.has(key)) {
         delete titlesByTabId[key];
+        changed = true;
+      }
+    }
+
+    for (const key of Object.keys(favoritesByTabId)) {
+      if (!openKeys.has(key)) {
+        delete favoritesByTabId[key];
         changed = true;
       }
     }
@@ -264,7 +314,9 @@
     const tab = result.tab;
     const hasNote = Boolean((tab.note || '').trim());
     const hasCustomTitle = Boolean((tab.customTitle || '').trim());
-    const primaryTag = (tab.tags || [])[0] || (hasNote ? 'memo' : 'tab');
+    const hasAutoTitle = !hasCustomTitle && Boolean((tab.autoTitle || '').trim());
+    const hasFavorite = tab.favorite === true;
+    const primaryTag = (tab.tags || [])[0] || (hasAutoTitle ? 'auto' : hasNote ? 'memo' : 'tab');
 
     const row = document.createElement('div');
     row.className = 'result-row';
@@ -275,6 +327,8 @@
     row.classList.toggle('selected', index === selectedIndex);
     row.classList.toggle('has-note', hasNote);
     row.classList.toggle('has-custom-title', hasCustomTitle);
+    row.classList.toggle('has-auto-title', hasAutoTitle);
+    row.classList.toggle('is-favorite', hasFavorite);
 
     const main = document.createElement('div');
     main.className = 'tab-main';
@@ -309,6 +363,33 @@
     }
     if (tab.active) meta.append(makeBadge('active', 'active'));
 
+    const favoriteButton = document.createElement('button');
+    favoriteButton.type = 'button';
+    favoriteButton.className = 'favorite-tab-btn';
+    favoriteButton.textContent = hasFavorite ? '★' : '☆';
+    favoriteButton.title = hasFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가';
+    favoriteButton.setAttribute('aria-label', favoriteButton.title);
+    favoriteButton.setAttribute('aria-pressed', String(hasFavorite));
+    favoriteButton.addEventListener('click', event => {
+      event.stopPropagation();
+      const nextFavorite = !tab.favorite;
+      setInMemoryFavorite(tab, nextFavorite);
+      favoriteButton.textContent = nextFavorite ? '★' : '☆';
+      favoriteButton.title = nextFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가';
+      favoriteButton.setAttribute('aria-label', favoriteButton.title);
+      favoriteButton.setAttribute('aria-pressed', String(nextFavorite));
+      favoriteButton.classList.toggle('active', nextFavorite);
+      row.classList.toggle('is-favorite', nextFavorite);
+      if (nextFavorite) {
+        badges.prepend(makeBadge('즐겨찾기', 'favorite'));
+      } else {
+        badges.querySelector('.badge.favorite')?.remove();
+      }
+      scheduleSave(status);
+      updateSummaryCounts();
+    });
+    favoriteButton.classList.toggle('active', hasFavorite);
+
     const openButton = document.createElement('button');
     openButton.type = 'button';
     openButton.className = 'open-tab-btn';
@@ -318,7 +399,11 @@
       openResult(index);
     });
 
-    rowHead.append(meta, openButton);
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+    actions.append(favoriteButton, openButton);
+
+    rowHead.append(meta, actions);
 
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
@@ -326,9 +411,14 @@
     titleInput.maxLength = TITLE_MAX_LENGTH;
     titleInput.value = displayTitle(tab);
     titleInput.placeholder = tab.originalTitle || '탭 제목';
-    titleInput.title = hasCustomTitle ? `원래 제목: ${tab.originalTitle}` : displayTitle(tab);
+    titleInput.title = hasCustomTitle
+      ? `수동 제목 · 원래 탭 제목: ${tab.originalTitle}`
+      : hasAutoTitle
+        ? `자동 제목 적용됨 · 원래 탭 제목: ${tab.originalTitle}`
+        : displayTitle(tab);
     titleInput.setAttribute('aria-label', '탭 제목 수정');
     titleInput.classList.toggle('custom-title', hasCustomTitle);
+    titleInput.classList.toggle('auto-title', hasAutoTitle);
 
     const noteTextarea = document.createElement('textarea');
     noteTextarea.className = 'tab-note-input';
@@ -343,7 +433,12 @@
 
     const badges = document.createElement('span');
     badges.className = 'badges';
-    if (hasCustomTitle) badges.append(makeBadge('제목', 'custom-title'));
+    if (hasFavorite) badges.append(makeBadge('즐겨찾기', 'favorite'));
+    if (hasCustomTitle) {
+      badges.append(makeBadge('수동 제목', 'custom-title'));
+    } else if (hasAutoTitle) {
+      badges.append(makeBadge('자동 제목', 'auto-title'));
+    }
     if (tab.pinned) badges.append(makeBadge('pinned', 'pinned'));
     if (tab.audible) badges.append(makeBadge('audio', 'audible'));
     if (tab.discarded) badges.append(makeBadge('sleep', 'discarded'));
@@ -353,7 +448,7 @@
 
     const status = document.createElement('span');
     status.className = 'row-status';
-    status.textContent = hasNote || hasCustomTitle ? '저장됨' : '';
+    status.textContent = hasNote || hasCustomTitle || hasFavorite ? '저장됨' : hasAutoTitle ? '자동 적용' : '';
 
     titleInput.addEventListener('click', stopRowAction);
     titleInput.addEventListener('keydown', event => {
@@ -370,8 +465,11 @@
     titleInput.addEventListener('input', () => {
       setInMemoryTitle(tab, titleInput.value);
       const edited = Boolean(tab.customTitle);
+      const autoApplied = !edited && Boolean(tab.autoTitle);
       titleInput.classList.toggle('custom-title', edited);
+      titleInput.classList.toggle('auto-title', autoApplied);
       row.classList.toggle('has-custom-title', edited);
+      row.classList.toggle('has-auto-title', autoApplied);
       scheduleSave(status);
       updateSummaryCounts();
     });
@@ -437,8 +535,105 @@
     }
   }
 
+  function canReadPageTitleSignals(tab) {
+    return Boolean(
+      chrome.scripting?.executeScript &&
+      typeof tab?.id === 'number' &&
+      /^https?:\/\//i.test(tab.url || '') &&
+      !tab.discarded
+    );
+  }
+
+  function collectPageTitleSignals() {
+    const compact = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const first = values => values.map(compact).find(Boolean) || '';
+    const metaByName = (...names) => {
+      for (const name of names) {
+        const node = document.querySelector(`meta[name="${name}"], meta[name="${name.toLowerCase()}"], meta[name="${name.toUpperCase()}"]`);
+        const content = compact(node?.getAttribute('content'));
+        if (content) return content;
+      }
+      return '';
+    };
+    const metaByProperty = (...properties) => {
+      for (const property of properties) {
+        const node = document.querySelector(`meta[property="${property}"], meta[name="${property}"]`);
+        const content = compact(node?.getAttribute('content'));
+        if (content) return content;
+      }
+      return '';
+    };
+    const schemaTitles = [];
+    const visitSchema = value => {
+      if (!value || schemaTitles.length >= 6) return;
+      if (Array.isArray(value)) {
+        value.forEach(visitSchema);
+        return;
+      }
+      if (typeof value !== 'object') return;
+
+      const type = String(value['@type'] || '').toLowerCase();
+      const scholarly = /scholarlyarticle|article|creativework|publicationissue|report|techarticle/.test(type);
+      if (typeof value.headline === 'string') schemaTitles.push(value.headline);
+      if (scholarly && typeof value.name === 'string') schemaTitles.push(value.name);
+      if (value['@graph']) visitSchema(value['@graph']);
+      if (value.mainEntity) visitSchema(value.mainEntity);
+    };
+
+    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 12)) {
+      try {
+        visitSchema(JSON.parse(script.textContent || ''));
+      } catch (_) {
+        // Ignore malformed page-provided JSON-LD.
+      }
+    }
+
+    const headingTitle = first([
+      document.querySelector('h1')?.textContent,
+      document.querySelector('[data-testid*="title" i]')?.textContent,
+      document.querySelector('.paper-title')?.textContent,
+      document.querySelector('.citation__title')?.textContent,
+      document.querySelector('#title')?.textContent,
+    ]);
+
+    return {
+      documentTitle: compact(document.title),
+      citationTitle: metaByName('citation_title', 'bepress_citation_title'),
+      dcTitle: metaByName('dc.title', 'dcterms.title', 'DC.Title'),
+      schemaTitle: first(schemaTitles),
+      headingTitle,
+      ogTitle: metaByProperty('og:title'),
+      twitterTitle: metaByName('twitter:title') || metaByProperty('twitter:title'),
+    };
+  }
+
+  async function readTitleSignals(tab) {
+    if (!canReadPageTitleSignals(tab)) return null;
+
+    try {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: collectPageTitleSignals,
+      });
+      return result?.result || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function applyAutoTitles(openTabs) {
+    const sourceTabs = Array.isArray(openTabs) ? openTabs : [];
+    const enrichedTabs = await Promise.all(sourceTabs.map(async tab => {
+      const titleSignals = await readTitleSignals(tab);
+      const autoTitle = window.TabSearch.inferAutoTitle({ ...tab, titleSignals });
+      if (!titleSignals && !autoTitle) return tab;
+      return { ...tab, titleSignals, autoTitle };
+    }));
+    return enrichedTabs;
+  }
+
   async function refreshTabs() {
-    refreshBtn.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
     try {
       const [activeTabs, currentWindowTabs, allTabs] = await Promise.all([
         chrome.tabs.query({ active: true, currentWindow: true }),
@@ -447,11 +642,12 @@
       ]);
       currentWindowId = activeTabs[0]?.windowId ?? currentWindowTabs[0]?.windowId ?? null;
       await pruneTabDataForTabs(allTabs);
-      tabs = allTabs.map(tab => applySavedTabData(window.TabSearch.normalizeTab(tab)));
+      const titledTabs = await applyAutoTitles(allTabs);
+      tabs = titledTabs.map(tab => applySavedTabData(window.TabSearch.normalizeTab(tab)));
       selectedIndex = 0;
       render();
     } finally {
-      refreshBtn.disabled = false;
+      if (refreshBtn) refreshBtn.disabled = false;
     }
   }
 
@@ -550,7 +746,7 @@
       searchInput.focus();
     });
 
-    refreshBtn.addEventListener('click', refreshTabs);
+    refreshBtn?.addEventListener('click', refreshTabs);
 
     for (const button of scopeButtons) {
       button.addEventListener('click', () => {
@@ -566,6 +762,7 @@
       chrome.storage.local.set({
         [STORAGE_KEY_NOTES]: notesByTabId,
         [STORAGE_KEY_TITLES]: titlesByTabId,
+        [STORAGE_KEY_FAVORITES]: favoritesByTabId,
       });
     });
   }

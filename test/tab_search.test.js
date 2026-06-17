@@ -16,7 +16,10 @@ function tab(overrides) {
     discarded: overrides.discarded,
     favIconUrl: overrides.favIconUrl,
     customTitle: overrides.customTitle,
+    autoTitle: overrides.autoTitle,
+    titleSignals: overrides.titleSignals,
     note: overrides.note,
+    favorite: overrides.favorite,
   });
 }
 
@@ -73,6 +76,45 @@ test('searches by title case-insensitively', () => {
     currentWindowId: 1,
   });
   assert.deepEqual(results.map(result => result.tab.id), [1]);
+});
+
+test('automatically applies clean paper titles from noisy tab titles', () => {
+  const pdf = tab({
+    id: 40,
+    title: 'Graph Neural Network Survey.pdf',
+    url: 'https://example.com/files/gnn-survey.pdf',
+  });
+  const semantic = tab({
+    id: 41,
+    title: 'Semantic Scholar - Retrieval Augmented Generation Systems',
+    url: 'https://www.semanticscholar.org/paper/rag-systems/abc',
+  });
+
+  assert.equal(pdf.originalTitle, 'Graph Neural Network Survey.pdf');
+  assert.equal(pdf.autoTitle, 'Graph Neural Network Survey');
+  assert.equal(pdf.title, 'Graph Neural Network Survey');
+  assert.equal(semantic.autoTitle, 'Retrieval Augmented Generation Systems');
+  assert.equal(semantic.title, 'Retrieval Augmented Generation Systems');
+});
+
+test('prefers citation metadata titles over generic paper page titles', () => {
+  const paper = tab({
+    id: 42,
+    title: 'OpenReview discussion',
+    url: 'https://openreview.net/forum?id=abc',
+    titleSignals: {
+      documentTitle: 'OpenReview discussion',
+      citationTitle: 'Scaling Laws for Reward Model Overoptimization',
+      ogTitle: 'OpenReview',
+    },
+  });
+
+  assert.equal(paper.autoTitle, 'Scaling Laws for Reward Model Overoptimization');
+  const results = TabSearch.searchTabs([paper], 'reward overoptimization', {
+    scope: 'all-windows',
+    currentWindowId: 1,
+  });
+  assert.deepEqual(results.map(result => result.tab.id), [42]);
 });
 
 test('searches by edited title or memo using OR field matching', () => {
@@ -145,6 +187,20 @@ test('filters current window by default and can search all windows', () => {
     currentWindowId: 1,
   });
   assert.deepEqual(all.map(result => result.tab.id), [1, 4, 2, 5, 3]);
+});
+
+test('sorts favorite tabs above normal tabs after active tabs', () => {
+  const sample = [
+    tab({ id: 50, windowId: 1, index: 0, title: 'First Paper', url: 'https://example.com/first' }),
+    tab({ id: 51, windowId: 1, index: 1, title: 'Favorite Paper', url: 'https://example.com/favorite', favorite: true }),
+    tab({ id: 52, windowId: 1, index: 2, title: 'Active Paper', url: 'https://example.com/active', active: true }),
+  ];
+
+  const results = TabSearch.searchTabs(sample, 'paper', {
+    scope: 'current-window',
+    currentWindowId: 1,
+  });
+  assert.deepEqual(results.map(result => result.tab.id), [52, 51, 50]);
 });
 
 test('sorts title matches above weaker memo matches when status is equal', () => {
