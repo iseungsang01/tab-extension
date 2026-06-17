@@ -312,6 +312,10 @@ h1 {
   color: var(--amber-500);
 }
 
+.favorite-count {
+  color: var(--amber-500);
+}
+
 .scope-label {
   display: inline-flex;
   align-items: center;
@@ -597,6 +601,40 @@ h1 {
   color: var(--danger);
 }
 
+.row-reset-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.reset-btn {
+  min-height: 21px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--slate-500);
+  background: var(--slate-50);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 850;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease, transform 120ms ease, opacity 120ms ease;
+}
+
+.reset-btn:hover:not(:disabled) {
+  border-color: var(--brand-100);
+  color: var(--brand-700);
+  background: var(--brand-50);
+}
+
+.reset-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.reset-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .open-tab-btn {
   flex: 0 0 auto;
   min-width: 42px;
@@ -697,7 +735,8 @@ h1 {
   .tab-title-input:focus,
   .tab-note-input:hover,
   .tab-note-input:focus,
-  .favorite-tab-btn {
+  .favorite-tab-btn,
+  .reset-btn {
     background: #1e293b;
   }
 

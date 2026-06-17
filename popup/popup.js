@@ -17,8 +17,7 @@
   const resultsEl = document.getElementById('results');
   const emptyState = document.getElementById('emptyState');
   const resultCount = document.getElementById('resultCount');
-  const memoCount = document.getElementById('memoCount');
-  const titleCount = document.getElementById('titleCount');
+  const favoriteCount = document.getElementById('favoriteCount');
   const headerStats = document.getElementById('headerStats');
   const scopeLabel = document.getElementById('scopeLabel');
   const scopeButtons = Array.from(document.querySelectorAll('.scope-btn'));
@@ -60,8 +59,7 @@
     const favoriteTotal = visibleTabs.filter(tab => tab.favorite).length;
 
     if (resultCount) resultCount.textContent = `${resultLength}건`;
-    if (memoCount) memoCount.textContent = String(memoTotal);
-    if (titleCount) titleCount.textContent = String(titleTotal);
+    if (favoriteCount) favoriteCount.textContent = String(favoriteTotal);
     if (headerStats) headerStats.textContent = `탭 ${visibleCount} · 즐겨찾기 ${favoriteTotal} · 메모 ${memoTotal} · 수동 ${titleTotal} · 자동 ${autoTitleTotal}`;
     if (scopeLabel) scopeLabel.textContent = `${scopeText()} · ${resultLength}/${visibleCount}`;
   }
@@ -379,12 +377,7 @@
       favoriteButton.setAttribute('aria-label', favoriteButton.title);
       favoriteButton.setAttribute('aria-pressed', String(nextFavorite));
       favoriteButton.classList.toggle('active', nextFavorite);
-      row.classList.toggle('is-favorite', nextFavorite);
-      if (nextFavorite) {
-        badges.prepend(makeBadge('즐겨찾기', 'favorite'));
-      } else {
-        badges.querySelector('.badge.favorite')?.remove();
-      }
+      syncRowState();
       scheduleSave(status);
       updateSummaryCounts();
     });
@@ -450,6 +443,63 @@
     status.className = 'row-status';
     status.textContent = hasNote || hasCustomTitle || hasFavorite ? '저장됨' : hasAutoTitle ? '자동 적용' : '';
 
+    const resetActions = document.createElement('div');
+    resetActions.className = 'row-reset-actions';
+
+    const resetTitleButton = document.createElement('button');
+    resetTitleButton.type = 'button';
+    resetTitleButton.className = 'reset-btn';
+    resetTitleButton.textContent = '제목 초기화';
+    resetTitleButton.title = '수동 제목만 지우고 자동 제목은 유지';
+    resetTitleButton.setAttribute('aria-label', resetTitleButton.title);
+
+    const resetMemoButton = document.createElement('button');
+    resetMemoButton.type = 'button';
+    resetMemoButton.className = 'reset-btn';
+    resetMemoButton.textContent = '메모 초기화';
+    resetMemoButton.title = '이 탭의 메모 지우기';
+    resetMemoButton.setAttribute('aria-label', resetMemoButton.title);
+
+    resetActions.append(resetTitleButton, resetMemoButton);
+
+    const refreshBadges = () => {
+      const edited = Boolean((tab.customTitle || '').trim());
+      const autoApplied = !edited && Boolean((tab.autoTitle || '').trim());
+
+      badges.textContent = '';
+      if (tab.favorite) badges.append(makeBadge('즐겨찾기', 'favorite'));
+      if (edited) {
+        badges.append(makeBadge('수동 제목', 'custom-title'));
+      } else if (autoApplied) {
+        badges.append(makeBadge('자동 제목', 'auto-title'));
+      }
+      if (tab.pinned) badges.append(makeBadge('pinned', 'pinned'));
+      if (tab.audible) badges.append(makeBadge('audio', 'audible'));
+      if (tab.discarded) badges.append(makeBadge('sleep', 'discarded'));
+      for (const tag of tab.tags || []) {
+        badges.append(makeBadge(tag, tag));
+      }
+    };
+
+    const syncRowState = () => {
+      const noteExists = Boolean((tab.note || '').trim());
+      const edited = Boolean((tab.customTitle || '').trim());
+      const autoApplied = !edited && Boolean((tab.autoTitle || '').trim());
+
+      titleInput.classList.toggle('custom-title', edited);
+      titleInput.classList.toggle('auto-title', autoApplied);
+      row.classList.toggle('has-note', noteExists);
+      row.classList.toggle('has-custom-title', edited);
+      row.classList.toggle('has-auto-title', autoApplied);
+      row.classList.toggle('is-favorite', tab.favorite === true);
+      resetTitleButton.disabled = !edited;
+      resetMemoButton.disabled = !noteExists;
+      status.textContent = noteExists || edited || tab.favorite ? '저장됨' : autoApplied ? '자동 적용' : '';
+      refreshBadges();
+    };
+
+    syncRowState();
+
     titleInput.addEventListener('click', stopRowAction);
     titleInput.addEventListener('keydown', event => {
       event.stopPropagation();
@@ -464,12 +514,7 @@
     });
     titleInput.addEventListener('input', () => {
       setInMemoryTitle(tab, titleInput.value);
-      const edited = Boolean(tab.customTitle);
-      const autoApplied = !edited && Boolean(tab.autoTitle);
-      titleInput.classList.toggle('custom-title', edited);
-      titleInput.classList.toggle('auto-title', autoApplied);
-      row.classList.toggle('has-custom-title', edited);
-      row.classList.toggle('has-auto-title', autoApplied);
+      syncRowState();
       scheduleSave(status);
       updateSummaryCounts();
     });
@@ -491,13 +536,31 @@
     });
     noteTextarea.addEventListener('input', () => {
       setInMemoryNote(tab, noteTextarea.value);
-      row.classList.toggle('has-note', Boolean(tab.note.trim()));
+      syncRowState();
+      scheduleSave(status);
+      updateSummaryCounts();
+    });
+
+    resetTitleButton.addEventListener('click', event => {
+      event.stopPropagation();
+      setInMemoryTitle(tab, '');
+      titleInput.value = displayTitle(tab);
+      syncRowState();
+      scheduleSave(status);
+      updateSummaryCounts();
+    });
+
+    resetMemoButton.addEventListener('click', event => {
+      event.stopPropagation();
+      setInMemoryNote(tab, '');
+      noteTextarea.value = '';
+      syncRowState();
       scheduleSave(status);
       updateSummaryCounts();
     });
 
     rowFooter.append(badges, status);
-    main.append(rowHead, titleInput, noteTextarea, rowFooter);
+    main.append(rowHead, titleInput, noteTextarea, rowFooter, resetActions);
     row.append(main);
 
     row.addEventListener('click', event => {
