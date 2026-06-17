@@ -7,35 +7,67 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="title-wrap">
-      <h1>Tab Finder</h1>
-      <span id="resultCount" class="count" aria-live="polite">0</span>
-    </div>
-    <div class="scope-toggle" role="group" aria-label="검색 범위">
-      <button type="button" id="scopeCurrent" class="scope-btn active" data-scope="current-window">현재 창</button>
-      <button type="button" id="scopeAll" class="scope-btn" data-scope="all-windows">모든 창</button>
-    </div>
-  </header>
+  <div class="app-shell">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="../icons/icon48.png" alt="">
+        </span>
+        <div class="brand-copy">
+          <h1>Tab Finder</h1>
+          <span>논문·문서 탭 빠른 검색</span>
+        </div>
+      </div>
+      <div id="headerStats" class="header-stats" aria-live="polite">탭 0 · 메모 0</div>
+    </header>
 
-  <main>
-    <div class="search-wrap">
-      <input id="searchInput" type="search" autocomplete="off" spellcheck="false" placeholder="탭 제목 또는 메모 검색" aria-label="탭 검색">
-      <button id="clearBtn" class="clear-btn" type="button" aria-label="검색어 지우기">×</button>
-    </div>
+    <main class="popup-main">
+      <section class="search-section" aria-label="탭 검색">
+        <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+          <input id="searchInput" type="search" autocomplete="off" spellcheck="false" placeholder="제목·메모 검색" aria-label="탭 검색">
+          <button id="clearBtn" class="clear-btn" type="button" aria-label="검색어 지우기">×</button>
+        </div>
+      </section>
 
-    <div class="meta-row">
-      <span id="scopeLabel">현재 창</span>
-      <button id="refreshBtn" class="refresh-btn" type="button">새로고침</button>
-    </div>
+      <section class="filters" aria-label="검색 범위">
+        <div class="scope-toggle" role="group" aria-label="검색 범위">
+          <button type="button" id="scopeCurrent" class="scope-btn active" data-scope="current-window">현재 창</button>
+          <button type="button" id="scopeAll" class="scope-btn" data-scope="all-windows">모든 창</button>
+        </div>
+        <span class="filter-pill">제목</span>
+        <span class="filter-pill">메모</span>
+      </section>
 
-    <div id="emptyState" class="empty-state" hidden>
-      <strong>결과 없음</strong>
-      <span>다른 검색어를 입력하세요.</span>
-    </div>
+      <section class="tabs-row" aria-label="결과 요약">
+        <span class="mode-tab active">검색 <span id="resultCount" class="count">0건</span></span>
+        <span class="mode-tab">메모 <span id="memoCount" class="count muted-count">0</span></span>
+        <span class="mode-tab">제목 편집 <span id="titleCount" class="count muted-count">0</span></span>
+        <span id="scopeLabel" class="scope-label">현재 창</span>
+      </section>
 
-    <div id="results" class="results" role="listbox" aria-label="검색 결과"></div>
-  </main>
+      <div id="emptyState" class="empty-state" hidden>
+        <strong>결과 없음</strong>
+        <span>다른 검색어를 입력하세요.</span>
+      </div>
+
+      <div id="results" class="results" role="listbox" aria-label="검색 결과"></div>
+    </main>
+
+    <footer class="bottom-bar">
+      <button id="refreshBtn" class="sync-btn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-6.2-8.6"></path>
+          <polyline points="21 4 21 10 15 10"></polyline>
+        </svg>
+        탭 동기화
+      </button>
+      <span class="footer-note">자동 저장</span>
+    </footer>
+  </div>
 
   <script src="../lib/tab_search.js"></script>
   <script src="popup.js"></script>

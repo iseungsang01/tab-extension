@@ -16,6 +16,9 @@
   const resultsEl = document.getElementById('results');
   const emptyState = document.getElementById('emptyState');
   const resultCount = document.getElementById('resultCount');
+  const memoCount = document.getElementById('memoCount');
+  const titleCount = document.getElementById('titleCount');
+  const headerStats = document.getElementById('headerStats');
   const scopeLabel = document.getElementById('scopeLabel');
   const scopeButtons = Array.from(document.querySelectorAll('.scope-btn'));
 
@@ -41,9 +44,22 @@
     return scope === 'all-windows' ? '모든 창' : '현재 창';
   }
 
-  function baseVisibleCount() {
-    if (scope === 'all-windows' || typeof currentWindowId !== 'number') return tabs.length;
-    return tabs.filter(tab => tab.windowId === currentWindowId).length;
+  function visibleTabsForScope() {
+    if (scope === 'all-windows' || typeof currentWindowId !== 'number') return tabs;
+    return tabs.filter(tab => tab.windowId === currentWindowId);
+  }
+
+  function updateSummaryCounts(resultLength = currentResults.length) {
+    const visibleTabs = visibleTabsForScope();
+    const visibleCount = visibleTabs.length;
+    const memoTotal = visibleTabs.filter(tab => (tab.note || '').trim()).length;
+    const titleTotal = visibleTabs.filter(tab => (tab.customTitle || '').trim()).length;
+
+    if (resultCount) resultCount.textContent = `${resultLength}건`;
+    if (memoCount) memoCount.textContent = String(memoTotal);
+    if (titleCount) titleCount.textContent = String(titleTotal);
+    if (headerStats) headerStats.textContent = `탭 ${visibleCount} · 메모 ${memoTotal} · 제목 ${titleTotal}`;
+    if (scopeLabel) scopeLabel.textContent = `${scopeText()} · ${resultLength}/${visibleCount}`;
   }
 
   function tabKey(tabOrId) {
@@ -248,6 +264,7 @@
     const tab = result.tab;
     const hasNote = Boolean((tab.note || '').trim());
     const hasCustomTitle = Boolean((tab.customTitle || '').trim());
+    const primaryTag = (tab.tags || [])[0] || (hasNote ? 'memo' : 'tab');
 
     const row = document.createElement('div');
     row.className = 'result-row';
@@ -261,6 +278,47 @@
 
     const main = document.createElement('div');
     main.className = 'tab-main';
+
+    const rowHead = document.createElement('div');
+    rowHead.className = 'row-head';
+
+    const meta = document.createElement('div');
+    meta.className = 'row-meta';
+
+    const typeBadge = makeBadge(primaryTag, primaryTag);
+    typeBadge.classList.add('type-badge');
+
+    const host = document.createElement('span');
+    host.className = 'row-host';
+    host.textContent = tab.host || 'local tab';
+    host.title = tab.host || tab.url || displayTitle(tab);
+
+    const dot = document.createElement('span');
+    dot.className = 'row-dot';
+    dot.textContent = '·';
+
+    const windowLabel = document.createElement('span');
+    windowLabel.className = 'row-window';
+    windowLabel.textContent = typeof tab.windowId === 'number' && tab.windowId >= 0
+      ? `창 ${tab.windowId}`
+      : '창 정보 없음';
+
+    meta.append(typeBadge, faviconFor(tab), host, dot, windowLabel);
+    if (scope === 'all-windows' && typeof currentWindowId === 'number' && tab.windowId !== currentWindowId) {
+      meta.append(makeBadge('다른 창', 'window'));
+    }
+    if (tab.active) meta.append(makeBadge('active', 'active'));
+
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'open-tab-btn';
+    openButton.textContent = '열기';
+    openButton.addEventListener('click', event => {
+      event.stopPropagation();
+      openResult(index);
+    });
+
+    rowHead.append(meta, openButton);
 
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
@@ -280,16 +338,12 @@
     noteTextarea.placeholder = '메모 입력...';
     noteTextarea.setAttribute('aria-label', '탭 메모');
 
-    const controls = document.createElement('div');
-    controls.className = 'row-controls';
+    const rowFooter = document.createElement('div');
+    rowFooter.className = 'row-footer';
 
     const badges = document.createElement('span');
     badges.className = 'badges';
-    if (scope === 'all-windows' && typeof currentWindowId === 'number' && tab.windowId !== currentWindowId) {
-      badges.append(makeBadge('다른 창', 'window'));
-    }
     if (hasCustomTitle) badges.append(makeBadge('제목', 'custom-title'));
-    if (tab.active) badges.append(makeBadge('active', 'active'));
     if (tab.pinned) badges.append(makeBadge('pinned', 'pinned'));
     if (tab.audible) badges.append(makeBadge('audio', 'audible'));
     if (tab.discarded) badges.append(makeBadge('sleep', 'discarded'));
@@ -300,15 +354,6 @@
     const status = document.createElement('span');
     status.className = 'row-status';
     status.textContent = hasNote || hasCustomTitle ? '저장됨' : '';
-
-    const openButton = document.createElement('button');
-    openButton.type = 'button';
-    openButton.className = 'open-tab-btn';
-    openButton.textContent = '열기';
-    openButton.addEventListener('click', event => {
-      event.stopPropagation();
-      openResult(index);
-    });
 
     titleInput.addEventListener('click', stopRowAction);
     titleInput.addEventListener('keydown', event => {
@@ -328,6 +373,7 @@
       titleInput.classList.toggle('custom-title', edited);
       row.classList.toggle('has-custom-title', edited);
       scheduleSave(status);
+      updateSummaryCounts();
     });
     titleInput.addEventListener('blur', () => {
       if (!titleInput.value.trim()) {
@@ -349,11 +395,12 @@
       setInMemoryNote(tab, noteTextarea.value);
       row.classList.toggle('has-note', Boolean(tab.note.trim()));
       scheduleSave(status);
+      updateSummaryCounts();
     });
 
-    main.append(titleInput, noteTextarea);
-    controls.append(badges, status, openButton);
-    row.append(faviconFor(tab), main, controls);
+    rowFooter.append(badges, status);
+    main.append(rowHead, titleInput, noteTextarea, rowFooter);
+    row.append(main);
 
     row.addEventListener('click', event => {
       if (event.target.closest('input, textarea, button')) return;
@@ -378,9 +425,7 @@
     });
     if (selectedIndex >= currentResults.length) selectedIndex = Math.max(0, currentResults.length - 1);
 
-    const visibleCount = baseVisibleCount();
-    resultCount.textContent = `${currentResults.length}/${visibleCount}`;
-    scopeLabel.textContent = scopeText();
+    updateSummaryCounts(currentResults.length);
     setScopeButtons();
 
     resultsEl.textContent = '';
