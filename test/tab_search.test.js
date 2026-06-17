@@ -15,6 +15,8 @@ function tab(overrides) {
     audible: overrides.audible,
     discarded: overrides.discarded,
     favIconUrl: overrides.favIconUrl,
+    customTitle: overrides.customTitle,
+    note: overrides.note,
   });
 }
 
@@ -73,18 +75,40 @@ test('searches by title case-insensitively', () => {
   assert.deepEqual(results.map(result => result.tab.id), [1]);
 });
 
-test('searches by hostname and URL path', () => {
-  const arxiv = TabSearch.searchTabs(tabs, 'arxiv 1706', {
-    scope: 'all-windows',
-    currentWindowId: 1,
-  });
-  assert.deepEqual(arxiv.map(result => result.tab.id), [1]);
+test('searches by edited title or memo using OR field matching', () => {
+  const sample = [
+    tab({
+      id: 30,
+      title: 'Original page title',
+      customTitle: 'Transformer reading list',
+      note: 'retrieval methods to revisit',
+      url: 'https://example.com/a',
+    }),
+    tab({
+      id: 31,
+      title: 'Unrelated page',
+      note: 'compare retrieval augmented generation methods',
+      url: 'https://example.com/b',
+    }),
+  ];
 
-  const path = TabSearch.searchTabs(tabs, 'rag systems', {
+  const titleResults = TabSearch.searchTabs(sample, 'transformer', {
     scope: 'all-windows',
     currentWindowId: 1,
   });
-  assert.deepEqual(path.map(result => result.tab.id), [3]);
+  assert.deepEqual(titleResults.map(result => result.tab.id), [30]);
+
+  const memoResults = TabSearch.searchTabs(sample, 'retrieval', {
+    scope: 'all-windows',
+    currentWindowId: 1,
+  });
+  assert.deepEqual(memoResults.map(result => result.tab.id), [30, 31]);
+
+  const mixedResults = TabSearch.searchTabs(sample, 'transformer retrieval', {
+    scope: 'all-windows',
+    currentWindowId: 1,
+  });
+  assert.deepEqual(mixedResults.map(result => result.tab.id), [30]);
 });
 
 test('requires every query token to match', () => {
@@ -101,12 +125,12 @@ test('requires every query token to match', () => {
   assert.equal(miss.length, 0);
 });
 
-test('searches decoded URLs', () => {
+test('does not search hidden URL details', () => {
   const results = TabSearch.searchTabs(tabs, 'space paper', {
     scope: 'current-window',
     currentWindowId: 1,
   });
-  assert.deepEqual(results.map(result => result.tab.id), [5]);
+  assert.deepEqual(results.map(result => result.tab.id), []);
 });
 
 test('filters current window by default and can search all windows', () => {
@@ -123,9 +147,9 @@ test('filters current window by default and can search all windows', () => {
   assert.deepEqual(all.map(result => result.tab.id), [1, 4, 2, 5, 3]);
 });
 
-test('sorts title matches above weaker URL matches when status is equal', () => {
+test('sorts title matches above weaker memo matches when status is equal', () => {
   const sample = [
-    tab({ id: 10, windowId: 1, index: 0, title: 'Unrelated', url: 'https://example.com/graph' }),
+    tab({ id: 10, windowId: 1, index: 0, title: 'Unrelated', note: 'graph note', url: 'https://example.com/a' }),
     tab({ id: 11, windowId: 1, index: 1, title: 'Graph database paper', url: 'https://example.com/db' }),
   ];
   const results = TabSearch.searchTabs(sample, 'graph', {
