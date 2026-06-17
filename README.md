@@ -1,6 +1,10 @@
 # Tab Finder for Papers
 
 A lightweight Chrome MV3 extension for quickly finding open research, PDF, and documentation tabs.
+## 배포 상태
+
+- Chrome Extension Store 업로드 진행 중입니다.
+
 
 ## Use
 
@@ -48,3 +52,7 @@ npm test
 ```
 
 No build step is required. Chrome loads the source files directly.
+
+## License
+
+MIT © iseungsang01
