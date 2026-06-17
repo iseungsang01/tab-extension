@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tab Finder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title-wrap">
+      <h1>Tab Finder</h1>
+      <span id="resultCount" class="count" aria-live="polite">0</span>
+    </div>
+    <div class="scope-toggle" role="group" aria-label="검색 범위">
+      <button type="button" id="scopeCurrent" class="scope-btn active" data-scope="current-window">현재 창</button>
+      <button type="button" id="scopeAll" class="scope-btn" data-scope="all-windows">모든 창</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="search-wrap">
+      <input id="searchInput" type="search" autocomplete="off" spellcheck="false" placeholder="탭 제목 또는 URL 검색" aria-label="탭 검색">
+      <button id="clearBtn" class="clear-btn" type="button" aria-label="검색어 지우기">×</button>
+    </div>
+
+    <div class="meta-row">
+      <span id="scopeLabel">현재 창</span>
+      <button id="refreshBtn" class="refresh-btn" type="button">새로고침</button>
+    </div>
+
+    <div id="emptyState" class="empty-state" hidden>
+      <strong>결과 없음</strong>
+      <span>다른 검색어를 입력하세요.</span>
+    </div>
+
+    <div id="results" class="results" role="listbox" aria-label="검색 결과"></div>
+  </main>
+
+  <script src="../lib/tab_search.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.zip
+.omx/
+.DS_Store
+Thumbs.db
