@@ -12,7 +12,7 @@ A lightweight Chrome MV3 extension for quickly finding open research, PDF, and d
 
 The popup searches the current window by default. Use the scope toggle to include every open browser window.
 
-Use **편집** on a row to set a popup-only tab title and memo. Both are saved for the currently open tab and are included in search results.
+Each row has editable title and memo fields. Both are saved for the currently open tab and are included in search results.
 
 ## Development
 

@@ -23,7 +23,6 @@
   let notesByTabId = {};
   let titlesByTabId = {};
   let saveTimer = null;
-  let expandedEditorTabId = null;
   let scope = DEFAULT_SCOPE;
   let currentWindowId = null;
   let selectedIndex = 0;
@@ -50,7 +49,9 @@
   function tabKey(tabOrId) {
     let id = tabOrId;
     if (tabOrId && typeof tabOrId === 'object') id = tabOrId.id;
-    return typeof id === 'number' && id >= 0 ? String(id) : '';
+    if (typeof id === 'number' && id >= 0) return String(id);
+    if (typeof id === 'string' && /^\d+$/.test(id)) return id;
+    return '';
   }
 
   function normalizeStoredTextMap(value, maxLength) {
@@ -87,6 +88,11 @@
     return tab.customTitle || tab.originalTitle || tab.title || 'Untitled';
   }
 
+  function originalTitleForKey(key) {
+    const tab = tabs.find(candidate => tabKey(candidate) === key);
+    return tab?.originalTitle || '';
+  }
+
   function applySavedTabData(tab) {
     const key = tabKey(tab);
     tab.originalTitle = tab.originalTitle || tab.title || 'Untitled';
@@ -112,8 +118,12 @@
     const key = tabKey(tabOrId);
     if (!key) return;
 
+    const originalTitle = (tabOrId && typeof tabOrId === 'object'
+      ? tabOrId.originalTitle
+      : originalTitleForKey(key)) || '';
     const text = String(value ?? '').slice(0, TITLE_MAX_LENGTH).trim();
-    if (text) {
+
+    if (text && text !== originalTitle.trim()) {
       titlesByTabId[key] = text;
     } else {
       delete titlesByTabId[key];
@@ -195,25 +205,6 @@
     }, SAVE_DELAY_MS);
   }
 
-  async function saveNow(statusEl) {
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
-    }
-
-    if (statusEl) {
-      statusEl.textContent = '저장 중...';
-      statusEl.classList.remove('error');
-    }
-
-    const saved = await persistTabData();
-    if (statusEl && statusEl.isConnected) {
-      statusEl.textContent = saved ? '저장됨' : '저장 실패';
-      statusEl.classList.toggle('error', !saved);
-    }
-    return saved;
-  }
-
   async function flushPendingSaves() {
     if (!saveTimer) return;
     clearTimeout(saveTimer);
@@ -249,172 +240,12 @@
     return fallback;
   }
 
-  function notePreviewText(note) {
-    return String(note || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function focusEditorField(tabOrId, field) {
-    const key = tabKey(tabOrId);
-    if (!key) return;
-
-    requestAnimationFrame(() => {
-      const selector = `[data-tab-id="${key}"][data-editor-field="${field || 'title'}"]`;
-      const fieldEl = resultsEl.querySelector(selector);
-      if (!fieldEl) return;
-      fieldEl.focus();
-      if (typeof fieldEl.setSelectionRange === 'function') {
-        fieldEl.setSelectionRange(fieldEl.value.length, fieldEl.value.length);
-      }
-    });
-  }
-
-  function closeEditor() {
-    expandedEditorTabId = null;
-    render();
-    searchInput.focus();
-  }
-
-  function toggleEditor(tab, index, focusField = 'title') {
-    const key = tabKey(tab);
-    if (!key) return;
-
-    selectedIndex = index;
-    expandedEditorTabId = expandedEditorTabId === key ? null : key;
-    render();
-
-    if (expandedEditorTabId === key) {
-      focusEditorField(key, focusField);
-    } else {
-      searchInput.focus();
-    }
-  }
-
-  function handleEditorKeydown(event, index) {
+  function stopRowAction(event) {
     event.stopPropagation();
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closeEditor();
-    } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      openResult(index);
-    }
-  }
-
-  function renderEditor(tab, index, titleEl) {
-    const key = tabKey(tab);
-    const editor = document.createElement('div');
-    editor.className = 'tab-editor';
-    editor.addEventListener('click', event => event.stopPropagation());
-
-    const titleLabel = document.createElement('label');
-    titleLabel.className = 'editor-label';
-    titleLabel.htmlFor = `title-${key}`;
-    titleLabel.textContent = '탭 제목';
-
-    const titleInput = document.createElement('input');
-    titleInput.id = `title-${key}`;
-    titleInput.className = 'title-input';
-    titleInput.dataset.tabId = key;
-    titleInput.dataset.editorField = 'title';
-    titleInput.maxLength = TITLE_MAX_LENGTH;
-    titleInput.placeholder = tab.originalTitle || '원래 제목';
-    titleInput.value = tab.customTitle || '';
-
-    const noteLabel = document.createElement('label');
-    noteLabel.className = 'editor-label';
-    noteLabel.htmlFor = `note-${key}`;
-    noteLabel.textContent = '탭 메모';
-
-    const noteTextarea = document.createElement('textarea');
-    noteTextarea.id = `note-${key}`;
-    noteTextarea.className = 'note-textarea';
-    noteTextarea.dataset.tabId = key;
-    noteTextarea.dataset.editorField = 'note';
-    noteTextarea.maxLength = NOTE_MAX_LENGTH;
-    noteTextarea.rows = 3;
-    noteTextarea.placeholder = '이 탭에 대한 메모를 입력하세요.';
-    noteTextarea.value = tab.note || '';
-
-    const footer = document.createElement('div');
-    footer.className = 'editor-footer';
-
-    const hint = document.createElement('span');
-    hint.className = 'editor-hint';
-    hint.textContent = '자동 저장 · 제목을 비우면 원래 제목 사용';
-
-    const status = document.createElement('span');
-    status.className = 'editor-status';
-    status.textContent = '입력하면 자동 저장됩니다.';
-
-    const resetTitleBtn = document.createElement('button');
-    resetTitleBtn.type = 'button';
-    resetTitleBtn.className = 'editor-action';
-    resetTitleBtn.textContent = '제목 초기화';
-    resetTitleBtn.disabled = !titleInput.value.trim();
-
-    const deleteNoteBtn = document.createElement('button');
-    deleteNoteBtn.type = 'button';
-    deleteNoteBtn.className = 'editor-action';
-    deleteNoteBtn.textContent = '메모 삭제';
-    deleteNoteBtn.disabled = !noteTextarea.value.trim();
-
-    titleInput.addEventListener('input', () => {
-      setInMemoryTitle(key, titleInput.value);
-      titleEl.textContent = displayTitle(tab);
-      titleEl.classList.toggle('custom-title', Boolean(tab.customTitle));
-      resetTitleBtn.disabled = !titleInput.value.trim();
-      scheduleSave(status);
-    });
-
-    titleInput.addEventListener('keydown', event => {
-      if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
-        event.preventDefault();
-        saveNow(status);
-        titleInput.blur();
-        return;
-      }
-      handleEditorKeydown(event, index);
-    });
-
-    noteTextarea.addEventListener('input', () => {
-      setInMemoryNote(key, noteTextarea.value);
-      deleteNoteBtn.disabled = !noteTextarea.value.trim();
-      scheduleSave(status);
-    });
-
-    noteTextarea.addEventListener('keydown', event => {
-      handleEditorKeydown(event, index);
-    });
-
-    resetTitleBtn.addEventListener('click', async event => {
-      event.stopPropagation();
-      titleInput.value = '';
-      resetTitleBtn.disabled = true;
-      setInMemoryTitle(key, '');
-      await saveNow(status);
-      render();
-      focusEditorField(key, 'title');
-    });
-
-    deleteNoteBtn.addEventListener('click', async event => {
-      event.stopPropagation();
-      noteTextarea.value = '';
-      deleteNoteBtn.disabled = true;
-      setInMemoryNote(key, '');
-      await saveNow(status);
-      render();
-      focusEditorField(key, 'note');
-    });
-
-    footer.append(hint, status, resetTitleBtn, deleteNoteBtn);
-    editor.append(titleLabel, titleInput, noteLabel, noteTextarea, footer);
-    return editor;
   }
 
   function renderResult(result, index) {
     const tab = result.tab;
-    const key = tabKey(tab);
-    const isExpanded = key && expandedEditorTabId === key;
     const hasNote = Boolean((tab.note || '').trim());
     const hasCustomTitle = Boolean((tab.customTitle || '').trim());
 
@@ -426,28 +257,30 @@
     row.setAttribute('aria-selected', String(index === selectedIndex));
     row.classList.toggle('selected', index === selectedIndex);
     row.classList.toggle('has-note', hasNote);
-    row.classList.toggle('editing-tab', Boolean(isExpanded));
+    row.classList.toggle('has-custom-title', hasCustomTitle);
 
-    const main = document.createElement('span');
+    const main = document.createElement('div');
     main.className = 'tab-main';
 
-    const title = document.createElement('span');
-    title.className = 'tab-title';
-    title.classList.toggle('custom-title', hasCustomTitle);
-    title.textContent = displayTitle(tab);
-    title.title = hasCustomTitle ? `원래 제목: ${tab.originalTitle}` : displayTitle(tab);
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.className = 'tab-title-input';
+    titleInput.maxLength = TITLE_MAX_LENGTH;
+    titleInput.value = displayTitle(tab);
+    titleInput.placeholder = tab.originalTitle || '탭 제목';
+    titleInput.title = hasCustomTitle ? `원래 제목: ${tab.originalTitle}` : displayTitle(tab);
+    titleInput.setAttribute('aria-label', '탭 제목 수정');
+    titleInput.classList.toggle('custom-title', hasCustomTitle);
 
-    main.append(title);
+    const noteTextarea = document.createElement('textarea');
+    noteTextarea.className = 'tab-note-input';
+    noteTextarea.maxLength = NOTE_MAX_LENGTH;
+    noteTextarea.rows = 2;
+    noteTextarea.value = tab.note || '';
+    noteTextarea.placeholder = '메모 입력...';
+    noteTextarea.setAttribute('aria-label', '탭 메모');
 
-    if (hasNote) {
-      const note = document.createElement('span');
-      note.className = 'tab-note-preview';
-      note.textContent = notePreviewText(tab.note);
-      note.title = tab.note;
-      main.append(note);
-    }
-
-    const controls = document.createElement('span');
+    const controls = document.createElement('div');
     controls.className = 'row-controls';
 
     const badges = document.createElement('span');
@@ -464,31 +297,71 @@
       badges.append(makeBadge(tag, tag));
     }
 
-    const editToggle = document.createElement('button');
-    editToggle.type = 'button';
-    editToggle.className = `edit-toggle${hasNote || hasCustomTitle ? ' has-edit' : ''}`;
-    editToggle.textContent = '편집';
-    editToggle.title = '탭 제목/메모 편집';
-    editToggle.setAttribute('aria-expanded', String(Boolean(isExpanded)));
-    editToggle.addEventListener('click', event => {
+    const status = document.createElement('span');
+    status.className = 'row-status';
+    status.textContent = hasNote || hasCustomTitle ? '저장됨' : '';
+
+    const openButton = document.createElement('button');
+    openButton.type = 'button';
+    openButton.className = 'open-tab-btn';
+    openButton.textContent = '열기';
+    openButton.addEventListener('click', event => {
       event.stopPropagation();
-      toggleEditor(tab, index, 'title');
+      openResult(index);
     });
 
-    controls.append(badges, editToggle);
+    titleInput.addEventListener('click', stopRowAction);
+    titleInput.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          openResult(index);
+        } else {
+          titleInput.blur();
+        }
+      }
+    });
+    titleInput.addEventListener('input', () => {
+      setInMemoryTitle(tab, titleInput.value);
+      const edited = Boolean(tab.customTitle);
+      titleInput.classList.toggle('custom-title', edited);
+      row.classList.toggle('has-custom-title', edited);
+      scheduleSave(status);
+    });
+    titleInput.addEventListener('blur', () => {
+      if (!titleInput.value.trim()) {
+        titleInput.value = displayTitle(tab);
+      }
+    });
+
+    noteTextarea.addEventListener('click', stopRowAction);
+    noteTextarea.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        noteTextarea.blur();
+      } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        openResult(index);
+      }
+    });
+    noteTextarea.addEventListener('input', () => {
+      setInMemoryNote(tab, noteTextarea.value);
+      row.classList.toggle('has-note', Boolean(tab.note.trim()));
+      scheduleSave(status);
+    });
+
+    main.append(titleInput, noteTextarea);
+    controls.append(badges, status, openButton);
     row.append(faviconFor(tab), main, controls);
 
-    if (isExpanded) {
-      row.append(renderEditor(tab, index, title));
-    }
-
     row.addEventListener('click', event => {
-      if (event.target.closest('.tab-editor, .edit-toggle')) return;
+      if (event.target.closest('input, textarea, button')) return;
       openResult(index);
     });
 
     row.addEventListener('keydown', event => {
-      if (event.target.closest('.tab-editor, .edit-toggle')) return;
+      if (event.target.closest('input, textarea, button')) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         openResult(index);
@@ -504,9 +377,6 @@
       currentWindowId,
     });
     if (selectedIndex >= currentResults.length) selectedIndex = Math.max(0, currentResults.length - 1);
-    if (expandedEditorTabId && !currentResults.some(result => tabKey(result.tab) === expandedEditorTabId)) {
-      expandedEditorTabId = null;
-    }
 
     const visibleCount = baseVisibleCount();
     resultCount.textContent = `${currentResults.length}/${visibleCount}`;
@@ -533,9 +403,6 @@
       currentWindowId = activeTabs[0]?.windowId ?? currentWindowTabs[0]?.windowId ?? null;
       await pruneTabDataForTabs(allTabs);
       tabs = allTabs.map(tab => applySavedTabData(window.TabSearch.normalizeTab(tab)));
-      if (expandedEditorTabId && !tabs.some(tab => tabKey(tab) === expandedEditorTabId)) {
-        expandedEditorTabId = null;
-      }
       selectedIndex = 0;
       render();
     } finally {
