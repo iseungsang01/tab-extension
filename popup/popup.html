@@ -41,8 +41,8 @@
       </section>
 
       <section class="tabs-row" aria-label="결과 요약">
-        <span class="mode-tab active">검색 <span id="resultCount" class="count">0건</span></span>
-        <span class="mode-tab">즐겨찾기 <span id="favoriteCount" class="count favorite-count">0</span></span>
+        <button type="button" id="modeSearch" class="mode-tab active" data-view-mode="search" aria-pressed="true">검색 <span id="resultCount" class="count">0건</span></button>
+        <button type="button" id="modeFavorites" class="mode-tab" data-view-mode="favorites" aria-pressed="false">즐겨찾기 <span id="favoriteCount" class="count favorite-count">0</span></button>
         <span id="scopeLabel" class="scope-label">현재 창</span>
       </section>
 
@@ -52,6 +52,14 @@
       </div>
 
       <div id="results" class="results" role="listbox" aria-label="검색 결과"></div>
+
+      <section class="bulk-actions" aria-label="전체 초기화">
+        <span id="bulkResetStatus" class="bulk-reset-status" aria-live="polite"></span>
+        <div class="bulk-reset-buttons">
+          <button id="resetAllTitlesBtn" class="bulk-reset-btn" type="button" title="현재 검색 범위의 수동 제목만 지우고 자동 제목은 유지">전체 제목 초기화</button>
+          <button id="resetAllMemosBtn" class="bulk-reset-btn danger" type="button" title="현재 검색 범위의 모든 메모 지우기">전체 메모 초기화</button>
+        </div>
+      </section>
     </main>
   </div>
 

@@ -293,8 +293,17 @@ h1 {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
+  border: 0;
   border-bottom: 2px solid transparent;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
   font-weight: 600;
+}
+
+.mode-tab:hover {
+  color: var(--brand-700);
+  background: var(--brand-50);
 }
 
 .mode-tab.active {
@@ -424,8 +433,7 @@ h1 {
   font-weight: 800;
 }
 
-.row-host,
-.row-window {
+.row-host {
   overflow: hidden;
   min-width: 0;
   text-overflow: ellipsis;
@@ -436,10 +444,6 @@ h1 {
   max-width: 124px;
   color: var(--slate-700);
   font-weight: 800;
-}
-
-.row-dot {
-  color: var(--slate-300);
 }
 
 .tab-title-input,
@@ -635,6 +639,69 @@ h1 {
   opacity: 0.45;
 }
 
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.bulk-reset-status {
+  min-width: 64px;
+  color: var(--slate-400);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.bulk-reset-status.error {
+  color: var(--danger);
+}
+
+.bulk-reset-buttons {
+  display: inline-flex;
+  flex: 1;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bulk-reset-btn {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--slate-600);
+  background: var(--slate-50);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease, transform 120ms ease, opacity 120ms ease;
+}
+
+.bulk-reset-btn:hover:not(:disabled) {
+  border-color: var(--brand-100);
+  color: var(--brand-700);
+  background: var(--brand-50);
+}
+
+.bulk-reset-btn.danger:hover:not(:disabled) {
+  border-color: #fecdd3;
+  color: var(--rose-700);
+  background: var(--rose-50);
+}
+
+.bulk-reset-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.bulk-reset-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .open-tab-btn {
   flex: 0 0 auto;
   min-width: 42px;
@@ -736,7 +803,8 @@ h1 {
   .tab-note-input:hover,
   .tab-note-input:focus,
   .favorite-tab-btn,
-  .reset-btn {
+  .reset-btn,
+  .bulk-reset-btn {
     background: #1e293b;
   }
 
@@ -751,7 +819,8 @@ h1 {
   .popup-main,
   .search-section,
   .filters,
-  .tabs-row {
+  .tabs-row,
+  .bulk-actions {
     background: var(--bg);
   }
 

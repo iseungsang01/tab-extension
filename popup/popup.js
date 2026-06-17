@@ -7,6 +7,8 @@
   const STORAGE_KEY_FAVORITES = 'tabFinder.favorites.v1';
   const DEFAULT_SCOPE = 'current-window';
   const VALID_SCOPES = new Set(['current-window', 'all-windows']);
+  const DEFAULT_VIEW_MODE = 'search';
+  const VALID_VIEW_MODES = new Set(['search', 'favorites']);
   const SAVE_DELAY_MS = 350;
   const TITLE_MAX_LENGTH = 160;
   const NOTE_MAX_LENGTH = 2000;
@@ -21,6 +23,10 @@
   const headerStats = document.getElementById('headerStats');
   const scopeLabel = document.getElementById('scopeLabel');
   const scopeButtons = Array.from(document.querySelectorAll('.scope-btn'));
+  const modeButtons = Array.from(document.querySelectorAll('.mode-tab[data-view-mode]'));
+  const resetAllTitlesBtn = document.getElementById('resetAllTitlesBtn');
+  const resetAllMemosBtn = document.getElementById('resetAllMemosBtn');
+  const bulkResetStatus = document.getElementById('bulkResetStatus');
 
   let tabs = [];
   let notesByTabId = {};
@@ -28,6 +34,7 @@
   let favoritesByTabId = {};
   let saveTimer = null;
   let scope = DEFAULT_SCOPE;
+  let viewMode = DEFAULT_VIEW_MODE;
   let currentWindowId = null;
   let selectedIndex = 0;
   let currentResults = [];
@@ -36,6 +43,14 @@
   function setScopeButtons() {
     for (const button of scopeButtons) {
       const active = button.dataset.scope === scope;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    }
+  }
+
+  function setModeButtons() {
+    for (const button of modeButtons) {
+      const active = button.dataset.viewMode === viewMode;
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', String(active));
     }
@@ -50,18 +65,76 @@
     return tabs.filter(tab => tab.windowId === currentWindowId);
   }
 
-  function updateSummaryCounts(resultLength = currentResults.length) {
+  function setViewMode(nextMode) {
+    viewMode = VALID_VIEW_MODES.has(nextMode) ? nextMode : DEFAULT_VIEW_MODE;
+    selectedIndex = 0;
+    setModeButtons();
+    render();
+  }
+
+  function updateSummaryCounts(
+    resultLength = currentResults.length,
+    searchResultLength = null,
+    favoriteResultLength = null
+  ) {
+    if (searchResultLength === null || favoriteResultLength === null) {
+      const searchResults = window.TabSearch.searchTabs(tabs, searchInput.value, {
+        scope,
+        currentWindowId,
+      });
+      const favoriteResults = searchResults.filter(result => result.tab.favorite === true);
+      searchResultLength = searchResults.length;
+      favoriteResultLength = favoriteResults.length;
+    }
+
     const visibleTabs = visibleTabsForScope();
     const visibleCount = visibleTabs.length;
     const memoTotal = visibleTabs.filter(tab => (tab.note || '').trim()).length;
     const titleTotal = visibleTabs.filter(tab => (tab.customTitle || '').trim()).length;
     const autoTitleTotal = visibleTabs.filter(tab => !(tab.customTitle || '').trim() && (tab.autoTitle || '').trim()).length;
     const favoriteTotal = visibleTabs.filter(tab => tab.favorite).length;
+    const denominator = viewMode === 'favorites' ? favoriteTotal : visibleCount;
+    const modeText = viewMode === 'favorites' ? '즐겨찾기' : '검색';
 
-    if (resultCount) resultCount.textContent = `${resultLength}건`;
-    if (favoriteCount) favoriteCount.textContent = String(favoriteTotal);
+    if (resultCount) resultCount.textContent = `${searchResultLength}건`;
+    if (favoriteCount) favoriteCount.textContent = String(favoriteResultLength ?? favoriteTotal);
     if (headerStats) headerStats.textContent = `탭 ${visibleCount} · 즐겨찾기 ${favoriteTotal} · 메모 ${memoTotal} · 수동 ${titleTotal} · 자동 ${autoTitleTotal}`;
-    if (scopeLabel) scopeLabel.textContent = `${scopeText()} · ${resultLength}/${visibleCount}`;
+    if (scopeLabel) scopeLabel.textContent = `${scopeText()} · ${modeText} ${resultLength}/${denominator}`;
+    updateBulkResetControls(titleTotal, memoTotal);
+  }
+
+  function updateBulkResetControls(titleTotal = null, memoTotal = null) {
+    const visibleTabs = visibleTabsForScope();
+    const manualTitleCount = titleTotal ?? visibleTabs.filter(tab => (tab.customTitle || '').trim()).length;
+    const memoCount = memoTotal ?? visibleTabs.filter(tab => (tab.note || '').trim()).length;
+
+    if (resetAllTitlesBtn) {
+      resetAllTitlesBtn.disabled = manualTitleCount === 0;
+      resetAllTitlesBtn.title = `${scopeText()}의 수동 제목 ${manualTitleCount}개 초기화 (자동 제목은 유지)`;
+    }
+
+    if (resetAllMemosBtn) {
+      resetAllMemosBtn.disabled = memoCount === 0;
+      resetAllMemosBtn.title = `${scopeText()}의 메모 ${memoCount}개 초기화`;
+    }
+
+    if (bulkResetStatus && !bulkResetStatus.dataset.locked) {
+      bulkResetStatus.textContent = `${scopeText()} 기준`;
+      bulkResetStatus.classList.remove('error');
+    }
+  }
+
+  function showBulkResetStatus(text, isError = false) {
+    if (!bulkResetStatus) return;
+
+    bulkResetStatus.dataset.locked = 'true';
+    bulkResetStatus.textContent = text;
+    bulkResetStatus.classList.toggle('error', isError);
+    window.setTimeout(() => {
+      if (!bulkResetStatus) return;
+      delete bulkResetStatus.dataset.locked;
+      updateBulkResetControls();
+    }, 1400);
   }
 
   function tabKey(tabOrId) {
@@ -196,6 +269,50 @@
       delete favoritesByTabId[key];
     }
     updateOpenTabData(key);
+  }
+
+  async function resetAllTitlesInScope() {
+    const scopedKeys = new Set(visibleTabsForScope().map(tabKey).filter(Boolean));
+    let changed = 0;
+
+    for (const key of scopedKeys) {
+      if (!Object.prototype.hasOwnProperty.call(titlesByTabId, key)) continue;
+      delete titlesByTabId[key];
+      updateOpenTabData(key);
+      changed += 1;
+    }
+
+    if (changed === 0) {
+      updateBulkResetControls();
+      return;
+    }
+
+    selectedIndex = 0;
+    const saved = await persistTabData();
+    render();
+    showBulkResetStatus(saved ? `제목 ${changed}개 초기화됨` : '저장 실패', !saved);
+  }
+
+  async function resetAllMemosInScope() {
+    const scopedKeys = new Set(visibleTabsForScope().map(tabKey).filter(Boolean));
+    let changed = 0;
+
+    for (const key of scopedKeys) {
+      if (!Object.prototype.hasOwnProperty.call(notesByTabId, key)) continue;
+      delete notesByTabId[key];
+      updateOpenTabData(key);
+      changed += 1;
+    }
+
+    if (changed === 0) {
+      updateBulkResetControls();
+      return;
+    }
+
+    selectedIndex = 0;
+    const saved = await persistTabData();
+    render();
+    showBulkResetStatus(saved ? `메모 ${changed}개 초기화됨` : '저장 실패', !saved);
   }
 
   async function persistTabData() {
@@ -345,17 +462,7 @@
     host.textContent = tab.host || 'local tab';
     host.title = tab.host || tab.url || displayTitle(tab);
 
-    const dot = document.createElement('span');
-    dot.className = 'row-dot';
-    dot.textContent = '·';
-
-    const windowLabel = document.createElement('span');
-    windowLabel.className = 'row-window';
-    windowLabel.textContent = typeof tab.windowId === 'number' && tab.windowId >= 0
-      ? `창 ${tab.windowId}`
-      : '창 정보 없음';
-
-    meta.append(typeBadge, faviconFor(tab), host, dot, windowLabel);
+    meta.append(typeBadge, faviconFor(tab), host);
     if (scope === 'all-windows' && typeof currentWindowId === 'number' && tab.windowId !== currentWindowId) {
       meta.append(makeBadge('다른 창', 'window'));
     }
@@ -379,7 +486,7 @@
       favoriteButton.classList.toggle('active', nextFavorite);
       syncRowState();
       scheduleSave(status);
-      updateSummaryCounts();
+      render();
     });
     favoriteButton.classList.toggle('active', hasFavorite);
 
@@ -580,16 +687,33 @@
   }
 
   function render() {
-    currentResults = window.TabSearch.searchTabs(tabs, searchInput.value, {
+    const searchResults = window.TabSearch.searchTabs(tabs, searchInput.value, {
       scope,
       currentWindowId,
     });
+    const favoriteResults = searchResults.filter(result => result.tab.favorite === true);
+    currentResults = viewMode === 'favorites' ? favoriteResults : searchResults;
     if (selectedIndex >= currentResults.length) selectedIndex = Math.max(0, currentResults.length - 1);
 
-    updateSummaryCounts(currentResults.length);
+    updateSummaryCounts(currentResults.length, searchResults.length, favoriteResults.length);
     setScopeButtons();
+    setModeButtons();
 
     resultsEl.textContent = '';
+    if (emptyState) {
+      const emptyTitle = emptyState.querySelector('strong');
+      const emptyMessage = emptyState.querySelector('span');
+      const hasQuery = Boolean(searchInput.value.trim());
+      if (viewMode === 'favorites') {
+        if (emptyTitle) emptyTitle.textContent = '즐겨찾기 없음';
+        if (emptyMessage) emptyMessage.textContent = hasQuery
+          ? '즐겨찾기 안에서 다른 검색어를 입력하세요.'
+          : '별표 버튼으로 즐겨찾기를 추가하세요.';
+      } else {
+        if (emptyTitle) emptyTitle.textContent = '결과 없음';
+        if (emptyMessage) emptyMessage.textContent = '다른 검색어를 입력하세요.';
+      }
+    }
     emptyState.hidden = currentResults.length > 0;
     resultsEl.hidden = currentResults.length === 0;
 
@@ -817,6 +941,23 @@
         searchInput.focus();
       });
     }
+
+    for (const button of modeButtons) {
+      button.addEventListener('click', () => {
+        setViewMode(button.dataset.viewMode);
+        searchInput.focus();
+      });
+    }
+
+    resetAllTitlesBtn?.addEventListener('click', () => {
+      resetAllTitlesInScope();
+      searchInput.focus();
+    });
+
+    resetAllMemosBtn?.addEventListener('click', () => {
+      resetAllMemosInScope();
+      searchInput.focus();
+    });
 
     window.addEventListener('beforeunload', () => {
       if (!saveTimer) return;
