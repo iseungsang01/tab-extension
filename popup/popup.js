@@ -39,7 +39,8 @@
   }
 
   function displayPath(tab) {
-    const path = tab.path && tab.path !== '/' ? tab.path : '';
+    const pathWithoutNoise = (tab.path || '').split(/[?#]/, 1)[0];
+    const path = pathWithoutNoise && pathWithoutNoise !== '/' ? pathWithoutNoise : '';
     if (!tab.host) return tab.decodedUrl || tab.url || '';
     return `${tab.host}${path}`;
   }
@@ -72,7 +73,7 @@
     return fallback;
   }
 
-  function renderResult(result, index, windowLabels) {
+  function renderResult(result, index) {
     const tab = result.tab;
     const row = document.createElement('button');
     row.type = 'button';
@@ -92,12 +93,15 @@
     const url = document.createElement('span');
     url.className = 'tab-url';
     url.textContent = displayPath(tab);
+    url.title = tab.decodedUrl || tab.url || '';
 
     main.append(title, url);
 
     const badges = document.createElement('span');
     badges.className = 'badges';
-    badges.append(makeBadge(`W${windowLabels.get(tab.windowId) || '?'}`, 'window'));
+    if (scope === 'all-windows' && typeof currentWindowId === 'number' && tab.windowId !== currentWindowId) {
+      badges.append(makeBadge('다른 창', 'window'));
+    }
     if (tab.active) badges.append(makeBadge('active', 'active'));
     if (tab.pinned) badges.append(makeBadge('pinned', 'pinned'));
     if (tab.audible) badges.append(makeBadge('audio', 'audible'));
@@ -109,11 +113,6 @@
     row.append(faviconFor(tab), main, badges);
     row.addEventListener('click', () => openResult(index));
     return row;
-  }
-
-  function buildWindowLabels(results) {
-    const ids = [...new Set(results.map(result => result.tab.windowId))].sort((a, b) => a - b);
-    return new Map(ids.map((id, index) => [id, index + 1]));
   }
 
   function render() {
@@ -132,9 +131,8 @@
     emptyState.hidden = currentResults.length > 0;
     resultsEl.hidden = currentResults.length === 0;
 
-    const windowLabels = buildWindowLabels(currentResults);
     for (let i = 0; i < currentResults.length; i += 1) {
-      resultsEl.append(renderResult(currentResults[i], i, windowLabels));
+      resultsEl.append(renderResult(currentResults[i], i));
     }
   }
 
@@ -182,11 +180,11 @@
     if (!result) return;
     const tab = result.tab;
     try {
-      if (typeof tab.windowId === 'number' && tab.windowId >= 0) {
-        await chrome.windows.update(tab.windowId, { focused: true });
-      }
       if (typeof tab.id === 'number' && tab.id >= 0) {
         await chrome.tabs.update(tab.id, { active: true });
+      }
+      if (typeof tab.windowId === 'number' && tab.windowId >= 0) {
+        await chrome.windows.update(tab.windowId, { focused: true });
       }
       window.close();
     } catch (error) {
