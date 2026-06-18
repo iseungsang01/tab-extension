@@ -2,16 +2,162 @@
   'use strict';
 
   const STORAGE_KEY_SCOPE = 'tabFinder.scope';
+  const STORAGE_KEY_LANGUAGE = 'tabFinder.language';
   const STORAGE_KEY_NOTES = 'tabFinder.tabNotes.v1';
   const STORAGE_KEY_TITLES = 'tabFinder.tabTitles.v1';
   const STORAGE_KEY_FAVORITES = 'tabFinder.favorites.v1';
   const DEFAULT_SCOPE = 'current-window';
+  const DEFAULT_LANGUAGE = 'ko';
   const VALID_SCOPES = new Set(['current-window', 'all-windows']);
+  const VALID_LANGUAGES = new Set(['ko', 'en']);
   const DEFAULT_VIEW_MODE = 'search';
   const VALID_VIEW_MODES = new Set(['search', 'favorites']);
   const SAVE_DELAY_MS = 350;
   const TITLE_MAX_LENGTH = 160;
   const NOTE_MAX_LENGTH = 2000;
+  const MESSAGES = {
+    ko: {
+      subtitle: '논문·문서 탭 빠른 검색',
+      languageLabel: '언어',
+      languageSelect: '언어 선택',
+      languageKorean: '한국어',
+      languageEnglish: 'English',
+      searchSectionLabel: '탭 검색',
+      searchPlaceholder: '제목·자동 제목·메모 검색',
+      clearSearch: '검색어 지우기',
+      scopeSearchLabel: '검색 범위',
+      currentWindow: '현재 창',
+      allWindows: '모든 창',
+      resultsSummaryLabel: '결과 요약',
+      modeSearch: '검색',
+      modeFavorites: '즐겨찾기',
+      resultCount: ({ count }) => `${count}건`,
+      headerStats: ({ visibleCount, favoriteTotal, memoTotal, titleTotal, autoTitleTotal }) => `탭 ${visibleCount} · 즐겨찾기 ${favoriteTotal} · 메모 ${memoTotal} · 수동 ${titleTotal} · 자동 ${autoTitleTotal}`,
+      scopeSummary: ({ scopeText, modeText, resultLength, denominator }) => `${scopeText} · ${modeText} ${resultLength}/${denominator}`,
+      bulkResetLabel: '전체 초기화',
+      bulkResetAllTitles: '전체 제목 초기화',
+      bulkResetAllMemos: '전체 메모 초기화',
+      bulkResetAllTitlesTitle: '현재 검색 범위의 수동 제목만 지우고 자동 제목은 유지',
+      bulkResetAllMemosTitle: '현재 검색 범위의 모든 메모 지우기',
+      bulkResetTitlesTitle: ({ scopeText, count }) => `${scopeText}의 수동 제목 ${count}개 초기화 (자동 제목은 유지)`,
+      bulkResetMemosTitle: ({ scopeText, count }) => `${scopeText}의 메모 ${count}개 초기화`,
+      scopeBase: ({ scopeText }) => `${scopeText} 기준`,
+      titlesResetDone: ({ count }) => `제목 ${count}개 초기화됨`,
+      memosResetDone: ({ count }) => `메모 ${count}개 초기화됨`,
+      saving: '저장 중...',
+      saved: '저장됨',
+      saveFailed: '저장 실패',
+      otherWindow: '다른 창',
+      openTab: '열기',
+      tabTitlePlaceholder: '탭 제목',
+      manualTitleTooltip: ({ originalTitle }) => `수동 제목 · 원래 탭 제목: ${originalTitle}`,
+      autoTitleTooltip: ({ originalTitle }) => `자동 제목 적용됨 · 원래 탭 제목: ${originalTitle}`,
+      editTabTitle: '탭 제목 수정',
+      memoPlaceholder: '메모 입력...',
+      tabMemo: '탭 메모',
+      favorite: '즐겨찾기',
+      favoriteAdd: '즐겨찾기 추가',
+      favoriteRemove: '즐겨찾기 해제',
+      manualTitle: '수동 제목',
+      autoTitle: '자동 제목',
+      autoApplied: '자동 적용',
+      resetTitle: '제목 초기화',
+      resetTitleTooltip: '수동 제목만 지우고 자동 제목은 유지',
+      resetMemo: '메모 초기화',
+      resetMemoTooltip: '이 탭의 메모 지우기',
+      emptyFavoritesTitle: '즐겨찾기 없음',
+      emptyFavoritesFiltered: '즐겨찾기 안에서 다른 검색어를 입력하세요.',
+      emptyFavoritesDefault: '별표 버튼으로 즐겨찾기를 추가하세요.',
+      emptySearchTitle: '결과 없음',
+      emptySearchDefault: '다른 검색어를 입력하세요.',
+      searchResultsLabel: '검색 결과',
+      openTabError: '탭을 열 수 없음',
+      localTab: '로컬 탭',
+      untitled: '제목 없음',
+      badgeAuto: '자동',
+      badgeMemo: '메모',
+      badgeTab: '탭',
+      badgeActive: '활성',
+      badgePinned: '고정',
+      badgeAudio: '오디오',
+      badgeSleep: '절전',
+    },
+    en: {
+      subtitle: 'Fast search for paper and document tabs',
+      languageLabel: 'Lang',
+      languageSelect: 'Select language',
+      languageKorean: '한국어',
+      languageEnglish: 'English',
+      searchSectionLabel: 'Tab search',
+      searchPlaceholder: 'Search title, auto title, or memo',
+      clearSearch: 'Clear search',
+      scopeSearchLabel: 'Search scope',
+      currentWindow: 'Current',
+      allWindows: 'All windows',
+      resultsSummaryLabel: 'Result summary',
+      modeSearch: 'Search',
+      modeFavorites: 'Favorites',
+      resultCount: ({ count }) => String(count),
+      headerStats: ({ visibleCount, favoriteTotal, memoTotal, titleTotal, autoTitleTotal }) => `Tabs ${visibleCount} · Fav ${favoriteTotal} · Memo ${memoTotal} · M ${titleTotal} · A ${autoTitleTotal}`,
+      scopeSummary: ({ scopeText, modeText, resultLength, denominator }) => `${scopeText} · ${modeText} ${resultLength}/${denominator}`,
+      bulkResetLabel: 'Bulk reset',
+      bulkResetAllTitles: 'Reset titles',
+      bulkResetAllMemos: 'Reset memos',
+      bulkResetAllTitlesTitle: 'Clear manual titles in the current search scope and keep auto titles',
+      bulkResetAllMemosTitle: 'Clear every memo in the current search scope',
+      bulkResetTitlesTitle: ({ scopeText, count }) => `Reset ${count} manual title(s) in ${scopeText} and keep auto titles`,
+      bulkResetMemosTitle: ({ scopeText, count }) => `Reset ${count} memo(s) in ${scopeText}`,
+      scopeBase: ({ scopeText }) => `${scopeText} scope`,
+      titlesResetDone: ({ count }) => `${count} title(s) reset`,
+      memosResetDone: ({ count }) => `${count} memo(s) reset`,
+      saving: 'Saving...',
+      saved: 'Saved',
+      saveFailed: 'Save failed',
+      otherWindow: 'Other window',
+      openTab: 'Open',
+      tabTitlePlaceholder: 'Tab title',
+      manualTitleTooltip: ({ originalTitle }) => `Manual title · Original tab title: ${originalTitle}`,
+      autoTitleTooltip: ({ originalTitle }) => `Auto title applied · Original tab title: ${originalTitle}`,
+      editTabTitle: 'Edit tab title',
+      memoPlaceholder: 'Add memo...',
+      tabMemo: 'Tab memo',
+      favorite: 'Favorite',
+      favoriteAdd: 'Add favorite',
+      favoriteRemove: 'Remove favorite',
+      manualTitle: 'Manual title',
+      autoTitle: 'Auto title',
+      autoApplied: 'Auto applied',
+      resetTitle: 'Reset title',
+      resetTitleTooltip: 'Clear only the manual title and keep the auto title',
+      resetMemo: 'Reset memo',
+      resetMemoTooltip: 'Clear this tab memo',
+      emptyFavoritesTitle: 'No favorites',
+      emptyFavoritesFiltered: 'Try a different search inside favorites.',
+      emptyFavoritesDefault: 'Use the star button to add favorites.',
+      emptySearchTitle: 'No results',
+      emptySearchDefault: 'Try a different search.',
+      searchResultsLabel: 'Search results',
+      openTabError: 'Could not open tab',
+      localTab: 'Local tab',
+      untitled: 'Untitled',
+      badgeAuto: 'auto',
+      badgeMemo: 'memo',
+      badgeTab: 'tab',
+      badgeActive: 'active',
+      badgePinned: 'pinned',
+      badgeAudio: 'audio',
+      badgeSleep: 'sleep',
+    },
+  };
+  const BADGE_LABEL_KEYS = {
+    auto: 'badgeAuto',
+    memo: 'badgeMemo',
+    tab: 'badgeTab',
+    active: 'badgeActive',
+    pinned: 'badgePinned',
+    audible: 'badgeAudio',
+    discarded: 'badgeSleep',
+  };
 
   const searchInput = document.getElementById('searchInput');
   const clearBtn = document.getElementById('clearBtn');
@@ -22,6 +168,7 @@
   const favoriteCount = document.getElementById('favoriteCount');
   const headerStats = document.getElementById('headerStats');
   const scopeLabel = document.getElementById('scopeLabel');
+  const languageSelect = document.getElementById('languageSelect');
   const scopeButtons = Array.from(document.querySelectorAll('.scope-btn'));
   const modeButtons = Array.from(document.querySelectorAll('.mode-tab[data-view-mode]'));
   const resetAllTitlesBtn = document.getElementById('resetAllTitlesBtn');
@@ -35,6 +182,7 @@
   let saveTimer = null;
   let scope = DEFAULT_SCOPE;
   let viewMode = DEFAULT_VIEW_MODE;
+  let language = DEFAULT_LANGUAGE;
   let currentWindowId = null;
   let selectedIndex = 0;
   let currentResults = [];
@@ -56,8 +204,46 @@
     }
   }
 
+  function translate(key, params = {}) {
+    const messages = MESSAGES[language] || MESSAGES[DEFAULT_LANGUAGE];
+    const fallback = MESSAGES[DEFAULT_LANGUAGE];
+    const template = Object.prototype.hasOwnProperty.call(messages, key)
+      ? messages[key]
+      : fallback[key];
+
+    if (typeof template === 'function') return template(params);
+    return template == null ? key : template;
+  }
+
+  function applyStaticLanguage() {
+    document.documentElement.lang = language;
+
+    for (const element of document.querySelectorAll('[data-i18n]')) {
+      element.textContent = translate(element.dataset.i18n);
+    }
+
+    for (const element of document.querySelectorAll('[data-i18n-placeholder]')) {
+      element.placeholder = translate(element.dataset.i18nPlaceholder);
+    }
+
+    for (const element of document.querySelectorAll('[data-i18n-aria-label]')) {
+      element.setAttribute('aria-label', translate(element.dataset.i18nAriaLabel));
+    }
+
+    for (const element of document.querySelectorAll('[data-i18n-title]')) {
+      element.title = translate(element.dataset.i18nTitle);
+    }
+
+    if (languageSelect) languageSelect.value = language;
+  }
+
+  function badgeLabel(tag) {
+    const key = BADGE_LABEL_KEYS[tag];
+    return key ? translate(key) : tag;
+  }
+
   function scopeText() {
-    return scope === 'all-windows' ? '모든 창' : '현재 창';
+    return scope === 'all-windows' ? translate('allWindows') : translate('currentWindow');
   }
 
   function visibleTabsForScope() {
@@ -94,12 +280,27 @@
     const autoTitleTotal = visibleTabs.filter(tab => !(tab.customTitle || '').trim() && (tab.autoTitle || '').trim()).length;
     const favoriteTotal = visibleTabs.filter(tab => tab.favorite).length;
     const denominator = viewMode === 'favorites' ? favoriteTotal : visibleCount;
-    const modeText = viewMode === 'favorites' ? '즐겨찾기' : '검색';
+    const modeText = viewMode === 'favorites' ? translate('modeFavorites') : translate('modeSearch');
 
-    if (resultCount) resultCount.textContent = `${searchResultLength}건`;
+    if (resultCount) resultCount.textContent = translate('resultCount', { count: searchResultLength });
     if (favoriteCount) favoriteCount.textContent = String(favoriteResultLength ?? favoriteTotal);
-    if (headerStats) headerStats.textContent = `탭 ${visibleCount} · 즐겨찾기 ${favoriteTotal} · 메모 ${memoTotal} · 수동 ${titleTotal} · 자동 ${autoTitleTotal}`;
-    if (scopeLabel) scopeLabel.textContent = `${scopeText()} · ${modeText} ${resultLength}/${denominator}`;
+    if (headerStats) {
+      headerStats.textContent = translate('headerStats', {
+        visibleCount,
+        favoriteTotal,
+        memoTotal,
+        titleTotal,
+        autoTitleTotal,
+      });
+    }
+    if (scopeLabel) {
+      scopeLabel.textContent = translate('scopeSummary', {
+        scopeText: scopeText(),
+        modeText,
+        resultLength,
+        denominator,
+      });
+    }
     updateBulkResetControls(titleTotal, memoTotal);
   }
 
@@ -110,16 +311,22 @@
 
     if (resetAllTitlesBtn) {
       resetAllTitlesBtn.disabled = manualTitleCount === 0;
-      resetAllTitlesBtn.title = `${scopeText()}의 수동 제목 ${manualTitleCount}개 초기화 (자동 제목은 유지)`;
+      resetAllTitlesBtn.title = translate('bulkResetTitlesTitle', {
+        scopeText: scopeText(),
+        count: manualTitleCount,
+      });
     }
 
     if (resetAllMemosBtn) {
       resetAllMemosBtn.disabled = memoCount === 0;
-      resetAllMemosBtn.title = `${scopeText()}의 메모 ${memoCount}개 초기화`;
+      resetAllMemosBtn.title = translate('bulkResetMemosTitle', {
+        scopeText: scopeText(),
+        count: memoCount,
+      });
     }
 
     if (bulkResetStatus && !bulkResetStatus.dataset.locked) {
-      bulkResetStatus.textContent = `${scopeText()} 기준`;
+      bulkResetStatus.textContent = translate('scopeBase', { scopeText: scopeText() });
       bulkResetStatus.classList.remove('error');
     }
   }
@@ -193,7 +400,7 @@
   }
 
   function displayTitle(tab) {
-    return tab.customTitle || tab.autoTitle || tab.originalTitle || tab.title || 'Untitled';
+    return tab.customTitle || tab.autoTitle || tab.originalTitle || tab.title || translate('untitled');
   }
 
   function fallbackTitle(tab) {
@@ -290,7 +497,7 @@
     selectedIndex = 0;
     const saved = await persistTabData();
     render();
-    showBulkResetStatus(saved ? `제목 ${changed}개 초기화됨` : '저장 실패', !saved);
+    showBulkResetStatus(saved ? translate('titlesResetDone', { count: changed }) : translate('saveFailed'), !saved);
   }
 
   async function resetAllMemosInScope() {
@@ -312,7 +519,7 @@
     selectedIndex = 0;
     const saved = await persistTabData();
     render();
-    showBulkResetStatus(saved ? `메모 ${changed}개 초기화됨` : '저장 실패', !saved);
+    showBulkResetStatus(saved ? translate('memosResetDone', { count: changed }) : translate('saveFailed'), !saved);
   }
 
   async function persistTabData() {
@@ -371,7 +578,7 @@
 
   function scheduleSave(statusEl) {
     if (statusEl) {
-      statusEl.textContent = '저장 중...';
+      statusEl.textContent = translate('saving');
       statusEl.classList.remove('error');
     }
 
@@ -381,7 +588,7 @@
       const saved = await persistTabData();
       if (!statusEl || !statusEl.isConnected) return;
 
-      statusEl.textContent = saved ? '저장됨' : '저장 실패';
+      statusEl.textContent = saved ? translate('saved') : translate('saveFailed');
       statusEl.classList.toggle('error', !saved);
     }, SAVE_DELAY_MS);
   }
@@ -454,25 +661,25 @@
     const meta = document.createElement('div');
     meta.className = 'row-meta';
 
-    const typeBadge = makeBadge(primaryTag, primaryTag);
+    const typeBadge = makeBadge(badgeLabel(primaryTag), primaryTag);
     typeBadge.classList.add('type-badge');
 
     const host = document.createElement('span');
     host.className = 'row-host';
-    host.textContent = tab.host || 'local tab';
+    host.textContent = tab.host || translate('localTab');
     host.title = tab.host || tab.url || displayTitle(tab);
 
     meta.append(typeBadge, faviconFor(tab), host);
     if (scope === 'all-windows' && typeof currentWindowId === 'number' && tab.windowId !== currentWindowId) {
-      meta.append(makeBadge('다른 창', 'window'));
+      meta.append(makeBadge(translate('otherWindow'), 'window'));
     }
-    if (tab.active) meta.append(makeBadge('active', 'active'));
+    if (tab.active) meta.append(makeBadge(badgeLabel('active'), 'active'));
 
     const favoriteButton = document.createElement('button');
     favoriteButton.type = 'button';
     favoriteButton.className = 'favorite-tab-btn';
     favoriteButton.textContent = hasFavorite ? '★' : '☆';
-    favoriteButton.title = hasFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가';
+    favoriteButton.title = hasFavorite ? translate('favoriteRemove') : translate('favoriteAdd');
     favoriteButton.setAttribute('aria-label', favoriteButton.title);
     favoriteButton.setAttribute('aria-pressed', String(hasFavorite));
     favoriteButton.addEventListener('click', event => {
@@ -480,7 +687,7 @@
       const nextFavorite = !tab.favorite;
       setInMemoryFavorite(tab, nextFavorite);
       favoriteButton.textContent = nextFavorite ? '★' : '☆';
-      favoriteButton.title = nextFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가';
+      favoriteButton.title = nextFavorite ? translate('favoriteRemove') : translate('favoriteAdd');
       favoriteButton.setAttribute('aria-label', favoriteButton.title);
       favoriteButton.setAttribute('aria-pressed', String(nextFavorite));
       favoriteButton.classList.toggle('active', nextFavorite);
@@ -493,7 +700,7 @@
     const openButton = document.createElement('button');
     openButton.type = 'button';
     openButton.className = 'open-tab-btn';
-    openButton.textContent = '열기';
+    openButton.textContent = translate('openTab');
     openButton.addEventListener('click', event => {
       event.stopPropagation();
       openResult(index);
@@ -510,13 +717,13 @@
     titleInput.className = 'tab-title-input';
     titleInput.maxLength = TITLE_MAX_LENGTH;
     titleInput.value = displayTitle(tab);
-    titleInput.placeholder = tab.originalTitle || '탭 제목';
+    titleInput.placeholder = tab.originalTitle || translate('tabTitlePlaceholder');
     titleInput.title = hasCustomTitle
-      ? `수동 제목 · 원래 탭 제목: ${tab.originalTitle}`
+      ? translate('manualTitleTooltip', { originalTitle: tab.originalTitle })
       : hasAutoTitle
-        ? `자동 제목 적용됨 · 원래 탭 제목: ${tab.originalTitle}`
+        ? translate('autoTitleTooltip', { originalTitle: tab.originalTitle })
         : displayTitle(tab);
-    titleInput.setAttribute('aria-label', '탭 제목 수정');
+    titleInput.setAttribute('aria-label', translate('editTabTitle'));
     titleInput.classList.toggle('custom-title', hasCustomTitle);
     titleInput.classList.toggle('auto-title', hasAutoTitle);
 
@@ -525,30 +732,30 @@
     noteTextarea.maxLength = NOTE_MAX_LENGTH;
     noteTextarea.rows = 2;
     noteTextarea.value = tab.note || '';
-    noteTextarea.placeholder = '메모 입력...';
-    noteTextarea.setAttribute('aria-label', '탭 메모');
+    noteTextarea.placeholder = translate('memoPlaceholder');
+    noteTextarea.setAttribute('aria-label', translate('tabMemo'));
 
     const rowFooter = document.createElement('div');
     rowFooter.className = 'row-footer';
 
     const badges = document.createElement('span');
     badges.className = 'badges';
-    if (hasFavorite) badges.append(makeBadge('즐겨찾기', 'favorite'));
+    if (hasFavorite) badges.append(makeBadge(translate('favorite'), 'favorite'));
     if (hasCustomTitle) {
-      badges.append(makeBadge('수동 제목', 'custom-title'));
+      badges.append(makeBadge(translate('manualTitle'), 'custom-title'));
     } else if (hasAutoTitle) {
-      badges.append(makeBadge('자동 제목', 'auto-title'));
+      badges.append(makeBadge(translate('autoTitle'), 'auto-title'));
     }
-    if (tab.pinned) badges.append(makeBadge('pinned', 'pinned'));
-    if (tab.audible) badges.append(makeBadge('audio', 'audible'));
-    if (tab.discarded) badges.append(makeBadge('sleep', 'discarded'));
+    if (tab.pinned) badges.append(makeBadge(badgeLabel('pinned'), 'pinned'));
+    if (tab.audible) badges.append(makeBadge(badgeLabel('audible'), 'audible'));
+    if (tab.discarded) badges.append(makeBadge(badgeLabel('discarded'), 'discarded'));
     for (const tag of tab.tags || []) {
-      badges.append(makeBadge(tag, tag));
+      badges.append(makeBadge(badgeLabel(tag), tag));
     }
 
     const status = document.createElement('span');
     status.className = 'row-status';
-    status.textContent = hasNote || hasCustomTitle || hasFavorite ? '저장됨' : hasAutoTitle ? '자동 적용' : '';
+    status.textContent = hasNote || hasCustomTitle || hasFavorite ? translate('saved') : hasAutoTitle ? translate('autoApplied') : '';
 
     const resetActions = document.createElement('div');
     resetActions.className = 'row-reset-actions';
@@ -556,15 +763,15 @@
     const resetTitleButton = document.createElement('button');
     resetTitleButton.type = 'button';
     resetTitleButton.className = 'reset-btn';
-    resetTitleButton.textContent = '제목 초기화';
-    resetTitleButton.title = '수동 제목만 지우고 자동 제목은 유지';
+    resetTitleButton.textContent = translate('resetTitle');
+    resetTitleButton.title = translate('resetTitleTooltip');
     resetTitleButton.setAttribute('aria-label', resetTitleButton.title);
 
     const resetMemoButton = document.createElement('button');
     resetMemoButton.type = 'button';
     resetMemoButton.className = 'reset-btn';
-    resetMemoButton.textContent = '메모 초기화';
-    resetMemoButton.title = '이 탭의 메모 지우기';
+    resetMemoButton.textContent = translate('resetMemo');
+    resetMemoButton.title = translate('resetMemoTooltip');
     resetMemoButton.setAttribute('aria-label', resetMemoButton.title);
 
     resetActions.append(resetTitleButton, resetMemoButton);
@@ -574,17 +781,17 @@
       const autoApplied = !edited && Boolean((tab.autoTitle || '').trim());
 
       badges.textContent = '';
-      if (tab.favorite) badges.append(makeBadge('즐겨찾기', 'favorite'));
+      if (tab.favorite) badges.append(makeBadge(translate('favorite'), 'favorite'));
       if (edited) {
-        badges.append(makeBadge('수동 제목', 'custom-title'));
+        badges.append(makeBadge(translate('manualTitle'), 'custom-title'));
       } else if (autoApplied) {
-        badges.append(makeBadge('자동 제목', 'auto-title'));
+        badges.append(makeBadge(translate('autoTitle'), 'auto-title'));
       }
-      if (tab.pinned) badges.append(makeBadge('pinned', 'pinned'));
-      if (tab.audible) badges.append(makeBadge('audio', 'audible'));
-      if (tab.discarded) badges.append(makeBadge('sleep', 'discarded'));
+      if (tab.pinned) badges.append(makeBadge(badgeLabel('pinned'), 'pinned'));
+      if (tab.audible) badges.append(makeBadge(badgeLabel('audible'), 'audible'));
+      if (tab.discarded) badges.append(makeBadge(badgeLabel('discarded'), 'discarded'));
       for (const tag of tab.tags || []) {
-        badges.append(makeBadge(tag, tag));
+        badges.append(makeBadge(badgeLabel(tag), tag));
       }
     };
 
@@ -601,7 +808,7 @@
       row.classList.toggle('is-favorite', tab.favorite === true);
       resetTitleButton.disabled = !edited;
       resetMemoButton.disabled = !noteExists;
-      status.textContent = noteExists || edited || tab.favorite ? '저장됨' : autoApplied ? '자동 적용' : '';
+      status.textContent = noteExists || edited || tab.favorite ? translate('saved') : autoApplied ? translate('autoApplied') : '';
       refreshBadges();
     };
 
@@ -705,13 +912,13 @@
       const emptyMessage = emptyState.querySelector('span');
       const hasQuery = Boolean(searchInput.value.trim());
       if (viewMode === 'favorites') {
-        if (emptyTitle) emptyTitle.textContent = '즐겨찾기 없음';
+        if (emptyTitle) emptyTitle.textContent = translate('emptyFavoritesTitle');
         if (emptyMessage) emptyMessage.textContent = hasQuery
-          ? '즐겨찾기 안에서 다른 검색어를 입력하세요.'
-          : '별표 버튼으로 즐겨찾기를 추가하세요.';
+          ? translate('emptyFavoritesFiltered')
+          : translate('emptyFavoritesDefault');
       } else {
-        if (emptyTitle) emptyTitle.textContent = '결과 없음';
-        if (emptyMessage) emptyMessage.textContent = '다른 검색어를 입력하세요.';
+        if (emptyTitle) emptyTitle.textContent = translate('emptySearchTitle');
+        if (emptyMessage) emptyMessage.textContent = translate('emptySearchDefault');
       }
     }
     emptyState.hidden = currentResults.length > 0;
@@ -848,6 +1055,16 @@
     }
   }
 
+  async function loadLanguage() {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_LANGUAGE);
+      const saved = data[STORAGE_KEY_LANGUAGE];
+      language = VALID_LANGUAGES.has(saved) ? saved : DEFAULT_LANGUAGE;
+    } catch (_) {
+      language = DEFAULT_LANGUAGE;
+    }
+  }
+
   async function saveScope(nextScope) {
     scope = VALID_SCOPES.has(nextScope) ? nextScope : DEFAULT_SCOPE;
     selectedIndex = 0;
@@ -855,6 +1072,17 @@
     render();
     try {
       await chrome.storage.local.set({ [STORAGE_KEY_SCOPE]: scope });
+    } catch (_) {
+      // The popup still works if persistence is unavailable.
+    }
+  }
+
+  async function saveLanguage(nextLanguage) {
+    language = VALID_LANGUAGES.has(nextLanguage) ? nextLanguage : DEFAULT_LANGUAGE;
+    applyStaticLanguage();
+    render();
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY_LANGUAGE]: language });
     } catch (_) {
       // The popup still works if persistence is unavailable.
     }
@@ -874,7 +1102,7 @@
       }
       window.close();
     } catch (error) {
-      scopeLabel.textContent = error?.message || '탭을 열 수 없음';
+      scopeLabel.textContent = error?.message || translate('openTabError');
     }
   }
 
@@ -949,6 +1177,11 @@
       });
     }
 
+    languageSelect?.addEventListener('change', () => {
+      saveLanguage(languageSelect.value);
+      searchInput.focus();
+    });
+
     resetAllTitlesBtn?.addEventListener('click', () => {
       resetAllTitlesInScope();
       searchInput.focus();
@@ -972,7 +1205,8 @@
   }
 
   bindEvents();
-  await Promise.all([loadScope(), loadTabData()]);
+  await Promise.all([loadScope(), loadLanguage(), loadTabData()]);
+  applyStaticLanguage();
   await refreshTabs();
   searchInput.focus();
 })();

@@ -40,6 +40,7 @@ npm test
 5. Click the extension icon and search by tab title or tab memo.
 
 The popup searches the current window by default. Use the scope toggle to include every open browser window.
+Use the language selector next to the scope toggle to switch between Korean and English.
 
 Each row has editable title and memo fields. Both are saved for the currently open tab and are included in search results.
 
