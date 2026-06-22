@@ -17,6 +17,7 @@ function tab(overrides) {
     favIconUrl: overrides.favIconUrl,
     customTitle: overrides.customTitle,
     autoTitle: overrides.autoTitle,
+    paperTitle: overrides.paperTitle,
     titleSignals: overrides.titleSignals,
     note: overrides.note,
     favorite: overrides.favorite,
@@ -95,6 +96,46 @@ test('automatically applies clean paper titles from noisy tab titles', () => {
   assert.equal(pdf.title, 'Graph Neural Network Survey');
   assert.equal(semantic.autoTitle, 'Retrieval Augmented Generation Systems');
   assert.equal(semantic.title, 'Retrieval Augmented Generation Systems');
+});
+
+test('extracts arXiv ids from abs and pdf urls', () => {
+  assert.equal(TabSearch.extractArxivId('https://arxiv.org/abs/1706.03762'), '1706.03762');
+  assert.equal(TabSearch.extractArxivId('https://arxiv.org/pdf/2301.01234'), '2301.01234');
+  assert.equal(TabSearch.extractArxivId('https://arxiv.org/pdf/2301.01234v2.pdf'), '2301.01234v2');
+  assert.equal(TabSearch.extractArxivId('https://www.arxiv.org/abs/2106.09685v1'), '2106.09685v1');
+  assert.equal(TabSearch.extractArxivId('https://arxiv.org/abs/hep-th/9901001'), 'hep-th/9901001');
+  assert.equal(TabSearch.extractArxivId('https://example.com/abs/1706.03762'), '');
+  assert.equal(TabSearch.extractArxivId('https://www.semanticscholar.org/paper/x/abc'), '');
+});
+
+test('extracts DOIs from doi.org and publisher urls', () => {
+  assert.equal(TabSearch.extractDoi('https://doi.org/10.1145/3292500.3330701'), '10.1145/3292500.3330701');
+  assert.equal(TabSearch.extractDoi('https://dx.doi.org/10.1038/nature14539'), '10.1038/nature14539');
+  assert.equal(TabSearch.extractDoi('https://dl.acm.org/doi/pdf/10.1145/3292500.3330701'), '10.1145/3292500.3330701');
+  assert.equal(TabSearch.extractDoi('https://link.springer.com/article/10.1007/s10994-021-05968-x'), '10.1007/s10994-021-05968-x');
+  assert.equal(TabSearch.extractDoi('https://doi.org/10.1145/3292500.3330701/'), '10.1145/3292500.3330701');
+  assert.equal(TabSearch.extractDoi('https://example.com/paper'), '');
+});
+
+test('extracts PubMed ids from pubmed and ncbi urls', () => {
+  assert.equal(TabSearch.extractPubmedId('https://pubmed.ncbi.nlm.nih.gov/29795537/'), '29795537');
+  assert.equal(TabSearch.extractPubmedId('https://pubmed.ncbi.nlm.nih.gov/29795537'), '29795537');
+  assert.equal(TabSearch.extractPubmedId('https://www.ncbi.nlm.nih.gov/pubmed/29795537'), '29795537');
+  assert.equal(TabSearch.extractPubmedId('https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6013516/'), '');
+  assert.equal(TabSearch.extractPubmedId('https://example.com/29795537'), '');
+});
+
+test('promotes an arXiv-resolved paper title over a bare-id pdf title', () => {
+  const paper = tab({
+    id: 60,
+    title: '1706.03762.pdf',
+    url: 'https://arxiv.org/pdf/1706.03762',
+    paperTitle: 'Attention Is All You Need',
+  });
+
+  assert.equal(paper.originalTitle, '1706.03762.pdf');
+  assert.equal(paper.autoTitle, 'Attention Is All You Need');
+  assert.equal(paper.title, 'Attention Is All You Need');
 });
 
 test('prefers citation metadata titles over generic paper page titles', () => {

@@ -6,6 +6,8 @@
   const STORAGE_KEY_NOTES = 'tabFinder.tabNotes.v1';
   const STORAGE_KEY_TITLES = 'tabFinder.tabTitles.v1';
   const STORAGE_KEY_FAVORITES = 'tabFinder.favorites.v1';
+  const STORAGE_KEY_RESOLVED_TITLES = 'tabFinder.resolvedTitles.v1';
+  const RESOLVED_TITLE_CACHE_LIMIT = 1000;
   const DEFAULT_SCOPE = 'current-window';
   const DEFAULT_LANGUAGE = 'ko';
   const VALID_SCOPES = new Set(['current-window', 'all-windows']);
@@ -179,6 +181,7 @@
   let notesByTabId = {};
   let titlesByTabId = {};
   let favoritesByTabId = {};
+  let resolvedTitlesByRef = {};
   let saveTimer = null;
   let scope = DEFAULT_SCOPE;
   let viewMode = DEFAULT_VIEW_MODE;
@@ -1015,14 +1018,131 @@
     }
   }
 
+  async function fetchArxivTitle(arxivId) {
+    try {
+      const response = await fetch(
+        `https://export.arxiv.org/api/query?id_list=${encodeURIComponent(arxivId)}&max_results=1`
+      );
+      if (!response.ok) return '';
+
+      const xml = await response.text();
+      const doc = new DOMParser().parseFromString(xml, 'application/xml');
+      // getElementsByTagName ignores the Atom namespace, unlike querySelector.
+      const entry = doc.getElementsByTagName('entry')[0];
+      const titleNode = entry ? entry.getElementsByTagName('title')[0] : null;
+      return (titleNode?.textContent || '').replace(/\s+/g, ' ').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  async function fetchCrossrefTitle(doi) {
+    try {
+      const response = await fetch(`https://api.crossref.org/works/${doi}`);
+      if (!response.ok) return '';
+
+      const data = await response.json();
+      const title = data?.message?.title;
+      const text = Array.isArray(title) ? title.find(Boolean) : title;
+      return String(text || '').replace(/\s+/g, ' ').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  async function fetchPubmedTitle(pmid) {
+    try {
+      const response = await fetch(
+        `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${encodeURIComponent(pmid)}&retmode=json`
+      );
+      if (!response.ok) return '';
+
+      const data = await response.json();
+      const title = data?.result?.[pmid]?.title;
+      return String(title || '').replace(/\s+/g, ' ').trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  // Each resolver turns a tab URL into an authoritative paper title when page
+  // metadata is unreadable (PDF viewer, discarded tabs). Probed in order; the
+  // first source whose id is present in the URL wins.
+  const TITLE_RESOLVERS = [
+    { source: 'arxiv', extract: url => window.TabSearch.extractArxivId(url), fetch: fetchArxivTitle },
+    { source: 'doi', extract: url => window.TabSearch.extractDoi(url), fetch: fetchCrossrefTitle },
+    { source: 'pmid', extract: url => window.TabSearch.extractPubmedId(url), fetch: fetchPubmedTitle },
+  ];
+
+  async function loadResolvedTitleCache() {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_RESOLVED_TITLES);
+      const stored = data[STORAGE_KEY_RESOLVED_TITLES];
+      resolvedTitlesByRef = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    } catch (_) {
+      resolvedTitlesByRef = {};
+    }
+  }
+
+  async function persistResolvedTitleCache() {
+    try {
+      const refs = Object.keys(resolvedTitlesByRef);
+      if (refs.length > RESOLVED_TITLE_CACHE_LIMIT) {
+        // Object key order is insertion order, so drop the oldest entries first.
+        for (const ref of refs.slice(0, refs.length - RESOLVED_TITLE_CACHE_LIMIT)) {
+          delete resolvedTitlesByRef[ref];
+        }
+      }
+      await chrome.storage.local.set({ [STORAGE_KEY_RESOLVED_TITLES]: resolvedTitlesByRef });
+    } catch (_) {
+      // Cache persistence is best-effort; auto titles still work without it.
+    }
+  }
+
+  async function resolveExternalTitle(url) {
+    for (const resolver of TITLE_RESOLVERS) {
+      const id = resolver.extract(url);
+      if (!id) continue;
+
+      const ref = `${resolver.source}:${id}`;
+      if (Object.prototype.hasOwnProperty.call(resolvedTitlesByRef, ref)) {
+        return { title: resolvedTitlesByRef[ref], cached: true };
+      }
+
+      const title = await resolver.fetch(id);
+      if (title) resolvedTitlesByRef[ref] = title;
+      // The URL maps to a single source, so stop once one matched.
+      return { title, cached: false };
+    }
+    return { title: '', cached: false };
+  }
+
   async function applyAutoTitles(openTabs) {
     const sourceTabs = Array.isArray(openTabs) ? openTabs : [];
+    let cacheChanged = false;
+
     const enrichedTabs = await Promise.all(sourceTabs.map(async tab => {
       const titleSignals = await readTitleSignals(tab);
-      const autoTitle = window.TabSearch.inferAutoTitle({ ...tab, titleSignals });
-      if (!titleSignals && !autoTitle) return tab;
-      return { ...tab, titleSignals, autoTitle };
+      let autoTitle = window.TabSearch.inferAutoTitle({ ...tab, titleSignals });
+      let paperTitle = '';
+
+      // Page metadata is unreadable on the built-in PDF viewer and discarded
+      // tabs, so arXiv / DOI / PubMed pages there fall back to a bare id or
+      // filename. Resolve the real title from the matching public API instead.
+      if (!autoTitle) {
+        const resolved = await resolveExternalTitle(tab.url);
+        if (resolved.title) {
+          paperTitle = resolved.title;
+          if (!resolved.cached) cacheChanged = true;
+          autoTitle = window.TabSearch.inferAutoTitle({ ...tab, paperTitle, titleSignals });
+        }
+      }
+
+      if (!titleSignals && !autoTitle && !paperTitle) return tab;
+      return { ...tab, paperTitle, titleSignals, autoTitle };
     }));
+
+    if (cacheChanged) await persistResolvedTitleCache();
     return enrichedTabs;
   }
 
@@ -1205,7 +1325,7 @@
   }
 
   bindEvents();
-  await Promise.all([loadScope(), loadLanguage(), loadTabData()]);
+  await Promise.all([loadScope(), loadLanguage(), loadTabData(), loadResolvedTitleCache()]);
   applyStaticLanguage();
   await refreshTabs();
   searchInput.focus();
