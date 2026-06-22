@@ -158,6 +158,30 @@ test('prefers citation metadata titles over generic paper page titles', () => {
   assert.deepEqual(results.map(result => result.tab.id), [42]);
 });
 
+test('does not auto-title non-paper SPA hosts even with stale social metadata', () => {
+  // YouTube keeps a channel page's og:title after you open one of its videos,
+  // so trusting it would freeze the row on the previous channel name. The live
+  // tab title (document title) must win instead.
+  const video = tab({
+    id: 70,
+    title: 'How Transformers Work - YouTube',
+    url: 'https://www.youtube.com/watch?v=abc123',
+    titleSignals: {
+      documentTitle: 'How Transformers Work - YouTube',
+      ogTitle: 'Some Channel Name',
+      twitterTitle: 'Some Channel Name',
+    },
+  });
+
+  assert.equal(video.autoTitle, '');
+  assert.equal(video.title, 'How Transformers Work - YouTube');
+  assert.equal(video.originalTitle, 'How Transformers Work - YouTube');
+
+  assert.equal(TabSearch.isNonPaperTitleHost('www.youtube.com'), true);
+  assert.equal(TabSearch.isNonPaperTitleHost('youtu.be'), true);
+  assert.equal(TabSearch.isNonPaperTitleHost('arxiv.org'), false);
+});
+
 test('searches by edited title or memo using OR field matching', () => {
   const sample = [
     tab({

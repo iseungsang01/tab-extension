@@ -140,6 +140,14 @@ h1 {
   white-space: nowrap;
 }
 
+.brand-version {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.6;
+  vertical-align: middle;
+}
+
 .header-stats {
   flex: 0 0 auto;
   font-size: 10px;

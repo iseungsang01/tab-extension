@@ -161,6 +161,7 @@
     discarded: 'badgeSleep',
   };
 
+  const appVersionEl = document.getElementById('appVersion');
   const searchInput = document.getElementById('searchInput');
   const clearBtn = document.getElementById('clearBtn');
   const refreshBtn = document.getElementById('refreshBtn');
@@ -216,6 +217,16 @@
 
     if (typeof template === 'function') return template(params);
     return template == null ? key : template;
+  }
+
+  function showAppVersion() {
+    if (!appVersionEl) return;
+    try {
+      const version = chrome.runtime.getManifest().version;
+      if (version) appVersionEl.textContent = `v${version}`;
+    } catch (_) {
+      // Version display is non-essential; ignore if the manifest is unavailable.
+    }
   }
 
   function applyStaticLanguage() {
@@ -937,7 +948,10 @@
       chrome.scripting?.executeScript &&
       typeof tab?.id === 'number' &&
       /^https?:\/\//i.test(tab.url || '') &&
-      !tab.discarded
+      !tab.discarded &&
+      // Non-paper SPA hosts (YouTube, etc.) never get an auto title, so there
+      // is nothing to gain from injecting the metadata reader into them.
+      !window.TabSearch.isNonPaperTitleHost(window.TabSearch.formatUrl(tab.url).host)
     );
   }
 
@@ -1327,6 +1341,7 @@
   bindEvents();
   await Promise.all([loadScope(), loadLanguage(), loadTabData(), loadResolvedTitleCache()]);
   applyStaticLanguage();
+  showAppVersion();
   await refreshTabs();
   searchInput.focus();
 })();
