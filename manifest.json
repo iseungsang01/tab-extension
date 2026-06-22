@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Finder for Papers",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Find crowded research and document tabs from a compact searchable popup.",
   "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": ["http://*/*", "https://*/*"],
