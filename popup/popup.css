@@ -797,6 +797,13 @@ h1 {
   background: var(--slate-50);
 }
 
+/* `display: grid` above is an author rule, so it overrides the user-agent
+   `[hidden] { display: none }`. Without this, the empty state stays visible
+   even when render() sets `hidden`. Re-hide it with a more specific rule. */
+.empty-state[hidden] {
+  display: none;
+}
+
 .empty-state strong {
   color: var(--slate-900);
   font-size: 14px;

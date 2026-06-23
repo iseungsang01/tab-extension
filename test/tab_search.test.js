@@ -98,6 +98,27 @@ test('automatically applies clean paper titles from noisy tab titles', () => {
   assert.equal(semantic.title, 'Retrieval Augmented Generation Systems');
 });
 
+test('formats paper keywords into a clean deduped memo default', () => {
+  // A single comma/semicolon-packed tag.
+  assert.equal(
+    TabSearch.formatKeywords('machine learning, deep learning; neural networks'),
+    'machine learning, deep learning, neural networks'
+  );
+  // Multiple per-keyword <meta> tags arrive as an array; dedupe case-insensitively.
+  assert.equal(
+    TabSearch.formatKeywords(['Quantum computing', 'quantum computing', 'Qubits']),
+    'Quantum computing, Qubits'
+  );
+  // HTML entities are decoded; surrounding quotes are trimmed.
+  assert.equal(TabSearch.formatKeywords('Reinforcement Learning &amp; Control'), 'Reinforcement Learning & Control');
+  // Nothing usable.
+  assert.equal(TabSearch.formatKeywords(['  ', '', null]), '');
+  assert.equal(TabSearch.formatKeywords(undefined), '');
+  // Capped at a sane count.
+  const many = Array.from({ length: 20 }, (_, i) => `kw${i}`);
+  assert.equal(TabSearch.formatKeywords(many).split(', ').length, 12);
+});
+
 test('extracts arXiv ids from abs and pdf urls', () => {
   assert.equal(TabSearch.extractArxivId('https://arxiv.org/abs/1706.03762'), '1706.03762');
   assert.equal(TabSearch.extractArxivId('https://arxiv.org/pdf/2301.01234'), '2301.01234');
@@ -115,6 +136,40 @@ test('extracts DOIs from doi.org and publisher urls', () => {
   assert.equal(TabSearch.extractDoi('https://link.springer.com/article/10.1007/s10994-021-05968-x'), '10.1007/s10994-021-05968-x');
   assert.equal(TabSearch.extractDoi('https://doi.org/10.1145/3292500.3330701/'), '10.1145/3292500.3330701');
   assert.equal(TabSearch.extractDoi('https://example.com/paper'), '');
+});
+
+test('reconstructs DOIs from Silverchair watermark pdf filenames', () => {
+  assert.equal(
+    TabSearch.extractSilverchairDoi('https://watermark02.silverchair.com/rsta.2003.1227.pdf?token=AQECAH'),
+    '10.1098/rsta.2003.1227'
+  );
+  assert.equal(
+    TabSearch.extractSilverchairDoi('https://watermark.silverchair.com/rspa.2007.0007.pdf'),
+    '10.1098/rspa.2007.0007'
+  );
+  assert.equal(
+    TabSearch.extractSilverchairDoi('https://watermark.silverchair.com/RSIF.2017.0213.PDF'),
+    '10.1098/rsif.2017.0213'
+  );
+  // Unknown journal abbreviation: no prefix mapping, so no guess.
+  assert.equal(TabSearch.extractSilverchairDoi('https://watermark.silverchair.com/zzzz.2020.0001.pdf'), '');
+  // Filename is not a DOI-suffix shape.
+  assert.equal(TabSearch.extractSilverchairDoi('https://watermark.silverchair.com/manuscript.pdf'), '');
+  // Right pattern but wrong host: stay out of it.
+  assert.equal(TabSearch.extractSilverchairDoi('https://example.com/rsta.2003.1227.pdf'), '');
+});
+
+test('promotes a Silverchair-resolved paper title over a bare filename', () => {
+  const paper = tab({
+    id: 61,
+    title: 'rsta.2003.1227.pdf',
+    url: 'https://watermark02.silverchair.com/rsta.2003.1227.pdf?token=AQECAH',
+    paperTitle: 'Quantum technology: the second quantum revolution',
+  });
+
+  assert.equal(paper.originalTitle, 'rsta.2003.1227.pdf');
+  assert.equal(paper.autoTitle, 'Quantum technology: the second quantum revolution');
+  assert.equal(paper.title, 'Quantum technology: the second quantum revolution');
 });
 
 test('extracts PubMed ids from pubmed and ncbi urls', () => {

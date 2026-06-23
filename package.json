@@ -1,6 +1,6 @@
 {
   "name": "tab-extension",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Chrome extension for quickly finding many open paper and document tabs.",
   "scripts": {

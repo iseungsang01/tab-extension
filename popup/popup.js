@@ -6,6 +6,7 @@
   const STORAGE_KEY_NOTES = 'tabFinder.tabNotes.v1';
   const STORAGE_KEY_TITLES = 'tabFinder.tabTitles.v1';
   const STORAGE_KEY_FAVORITES = 'tabFinder.favorites.v1';
+  const STORAGE_KEY_KEYWORDS_FILLED = 'tabFinder.keywordsFilled.v1';
   const STORAGE_KEY_RESOLVED_TITLES = 'tabFinder.resolvedTitles.v1';
   const RESOLVED_TITLE_CACHE_LIMIT = 1000;
   const DEFAULT_SCOPE = 'current-window';
@@ -182,6 +183,7 @@
   let notesByTabId = {};
   let titlesByTabId = {};
   let favoritesByTabId = {};
+  let keywordsFilledByTabId = {};
   let resolvedTitlesByRef = {};
   let saveTimer = null;
   let scope = DEFAULT_SCOPE;
@@ -542,6 +544,7 @@
         [STORAGE_KEY_NOTES]: notesByTabId,
         [STORAGE_KEY_TITLES]: titlesByTabId,
         [STORAGE_KEY_FAVORITES]: favoritesByTabId,
+        [STORAGE_KEY_KEYWORDS_FILLED]: keywordsFilledByTabId,
       });
       return true;
     } catch (_) {
@@ -551,14 +554,16 @@
 
   async function loadTabData() {
     try {
-      const data = await chrome.storage.local.get([STORAGE_KEY_NOTES, STORAGE_KEY_TITLES, STORAGE_KEY_FAVORITES]);
+      const data = await chrome.storage.local.get([STORAGE_KEY_NOTES, STORAGE_KEY_TITLES, STORAGE_KEY_FAVORITES, STORAGE_KEY_KEYWORDS_FILLED]);
       notesByTabId = normalizeStoredTextMap(data[STORAGE_KEY_NOTES], NOTE_MAX_LENGTH);
       titlesByTabId = normalizeStoredTextMap(data[STORAGE_KEY_TITLES], TITLE_MAX_LENGTH);
       favoritesByTabId = normalizeStoredBooleanMap(data[STORAGE_KEY_FAVORITES]);
+      keywordsFilledByTabId = normalizeStoredBooleanMap(data[STORAGE_KEY_KEYWORDS_FILLED]);
     } catch (_) {
       notesByTabId = {};
       titlesByTabId = {};
       favoritesByTabId = {};
+      keywordsFilledByTabId = {};
     }
   }
 
@@ -583,6 +588,13 @@
     for (const key of Object.keys(favoritesByTabId)) {
       if (!openKeys.has(key)) {
         delete favoritesByTabId[key];
+        changed = true;
+      }
+    }
+
+    for (const key of Object.keys(keywordsFilledByTabId)) {
+      if (!openKeys.has(key)) {
+        delete keywordsFilledByTabId[key];
         changed = true;
       }
     }
@@ -974,7 +986,19 @@
       }
       return '';
     };
+    // Keyword meta often repeats (one <meta> per keyword), so collect every match.
+    const metaAll = (...names) => {
+      const out = [];
+      for (const name of names) {
+        for (const node of document.querySelectorAll(`meta[name="${name}"], meta[name="${name.toLowerCase()}"], meta[name="${name.toUpperCase()}"]`)) {
+          const content = compact(node?.getAttribute('content'));
+          if (content) out.push(content);
+        }
+      }
+      return out;
+    };
     const schemaTitles = [];
+    const schemaKeywords = [];
     const visitSchema = value => {
       if (!value || schemaTitles.length >= 6) return;
       if (Array.isArray(value)) {
@@ -987,6 +1011,13 @@
       const scholarly = /scholarlyarticle|article|creativework|publicationissue|report|techarticle/.test(type);
       if (typeof value.headline === 'string') schemaTitles.push(value.headline);
       if (scholarly && typeof value.name === 'string') schemaTitles.push(value.name);
+      if (scholarly && value.keywords) {
+        if (Array.isArray(value.keywords)) {
+          value.keywords.forEach(keyword => { if (typeof keyword === 'string') schemaKeywords.push(keyword); });
+        } else if (typeof value.keywords === 'string') {
+          schemaKeywords.push(value.keywords);
+        }
+      }
       if (value['@graph']) visitSchema(value['@graph']);
       if (value.mainEntity) visitSchema(value.mainEntity);
     };
@@ -1015,6 +1046,9 @@
       headingTitle,
       ogTitle: metaByProperty('og:title'),
       twitterTitle: metaByName('twitter:title') || metaByProperty('twitter:title'),
+      // Academic keyword sources only (citation_keywords / Dublin Core / JSON-LD),
+      // so generic SEO `<meta name="keywords">` noise stays out of the memo.
+      keywords: [...metaAll('citation_keywords', 'dc.subject', 'dcterms.subject'), ...schemaKeywords],
     };
   }
 
@@ -1085,6 +1119,9 @@
   const TITLE_RESOLVERS = [
     { source: 'arxiv', extract: url => window.TabSearch.extractArxivId(url), fetch: fetchArxivTitle },
     { source: 'doi', extract: url => window.TabSearch.extractDoi(url), fetch: fetchCrossrefTitle },
+    // Silverchair watermark PDFs carry only the DOI suffix; the extractor
+    // rebuilds the full DOI, so the Crossref fetcher resolves it like any DOI.
+    { source: 'doi', extract: url => window.TabSearch.extractSilverchairDoi(url), fetch: fetchCrossrefTitle },
     { source: 'pmid', extract: url => window.TabSearch.extractPubmedId(url), fetch: fetchPubmedTitle },
   ];
 
@@ -1152,12 +1189,38 @@
         }
       }
 
-      if (!titleSignals && !autoTitle && !paperTitle) return tab;
-      return { ...tab, paperTitle, titleSignals, autoTitle };
+      const autoKeywords = window.TabSearch.formatKeywords(titleSignals && titleSignals.keywords);
+
+      if (!titleSignals && !autoTitle && !paperTitle && !autoKeywords) return tab;
+      return { ...tab, paperTitle, titleSignals, autoTitle, autoKeywords };
     }));
 
     if (cacheChanged) await persistResolvedTitleCache();
     return enrichedTabs;
+  }
+
+  // Seed the memo of a paper tab with the keywords printed on the paper, once.
+  // It is a one-time offer per tab: we only write when the memo is empty, and we
+  // mark the tab afterwards so clearing/editing the memo is never undone on the
+  // next refresh. Keyword memos are normal (searchable, counted) notes.
+  async function fillKeywordMemos(enrichedTabs) {
+    let changed = false;
+
+    for (const tab of Array.isArray(enrichedTabs) ? enrichedTabs : []) {
+      const keywords = (tab.autoKeywords || '').trim();
+      if (!keywords) continue;
+
+      const key = tabKey(tab);
+      if (!key || keywordsFilledByTabId[key]) continue;
+
+      if (!(notesByTabId[key] || '').trim()) {
+        notesByTabId[key] = keywords.slice(0, NOTE_MAX_LENGTH);
+      }
+      keywordsFilledByTabId[key] = true;
+      changed = true;
+    }
+
+    if (changed) await persistTabData();
   }
 
   async function refreshTabs() {
@@ -1171,6 +1234,7 @@
       currentWindowId = activeTabs[0]?.windowId ?? currentWindowTabs[0]?.windowId ?? null;
       await pruneTabDataForTabs(allTabs);
       const titledTabs = await applyAutoTitles(allTabs);
+      await fillKeywordMemos(titledTabs);
       tabs = titledTabs.map(tab => applySavedTabData(window.TabSearch.normalizeTab(tab)));
       selectedIndex = 0;
       render();
@@ -1334,6 +1398,7 @@
         [STORAGE_KEY_NOTES]: notesByTabId,
         [STORAGE_KEY_TITLES]: titlesByTabId,
         [STORAGE_KEY_FAVORITES]: favoritesByTabId,
+        [STORAGE_KEY_KEYWORDS_FILLED]: keywordsFilledByTabId,
       });
     });
   }
